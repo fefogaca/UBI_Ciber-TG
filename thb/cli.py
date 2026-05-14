@@ -1,4 +1,4 @@
-"""Interface de linha de comandos — subcomandos serve e send."""
+"""Interface de linha de comandos — subcomandos serve, send e menu."""
 
 from __future__ import annotations
 
@@ -7,9 +7,11 @@ import os
 import socket
 import sys
 
+from thb.branding import show_credits, show_splash
 from thb.crypto_config import CIPHERS, HASHES, validate_config
 from thb.kex import perform_kex
 from thb.transfer import receive_file, send_file
+
 
 def _norm_cipher(value: str) -> str:
     c = value.upper()
@@ -30,6 +32,9 @@ def _norm_hash(value: str) -> str:
 
 
 EPILOG = """
+Modo interativo (menus guiados, destinos guardados):
+  python -m thb menu
+
 EXEMPLOS (dois terminais, mesmos parâmetros criptográficos em ambos):
 
   Terminal 1 (receptor):
@@ -37,6 +42,9 @@ EXEMPLOS (dois terminais, mesmos parâmetros criptográficos em ambos):
 
   Terminal 2 (emissor):
     python -m thb send --host 127.0.0.1 --port 9000 --file ./documento.pdf
+
+  Uma só receção e terminar (comportamento antigo):
+    python -m thb serve --host 0.0.0.0 --port 9000 --once --output-dir ./received
 
   Com compressão e ChaCha20-Poly1305:
     python -m thb serve --port 9000 --compress --cipher CHACHA20-POLY1305 --output-dir ./recv
@@ -46,13 +54,20 @@ EXEMPLOS (dois terminais, mesmos parâmetros criptográficos em ambos):
     python -m thb serve --port 9000 --no-encrypt --output-dir ./recv
     python -m thb send --port 9000 --file ./dados.bin --no-encrypt
 
-Cifras suportadas: """ + ", ".join(CIPHERS) + """
-Hashes (HKDF/HMAC/assinatura): """ + ", ".join(HASHES) + """
+Cifras suportadas: """ + ", ".join(
+    CIPHERS
+) + """
+Hashes (HKDF/HMAC/assinatura): """ + ", ".join(
+    HASHES
+) + """
 
 LIMITAÇÕES CONHECIDAS:
   O servidor e o cliente devem ser executados com os mesmos parâmetros (--cipher, --hash,
   --compress, --no-encrypt). Caso contrário, o header de transferência não será decifrado
   ou verificado corretamente.
+
+  Por defeito o servidor aceita várias sessões seguidas (novo acordo X25519 por ligação).
+  Use --once para terminar após um ficheiro.
 
   O acordo de chaves X25519 não autentica o par: um atacante na rede (MITM) pode negociar
   chaves distintas com cada lado. Use o fingerprint [KEY FINGERPRINT] impresso após o KEX
@@ -77,12 +92,22 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EPILOG,
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=False)
+
+    sub.add_parser(
+        "menu",
+        help="Modo interativo com menus (recomendado para quem evita flags longas).",
+        description="Menus guiados para enviar/receber e gerir destinos em ~/.thb/peers.json.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     serve = sub.add_parser(
         "serve",
-        help="Modo receptor: escuta num endereço e recebe um ficheiro.",
-        description="Inicia o servidor TCP, realiza o handshake de chaves e recebe o ficheiro.",
+        help="Modo receptor: escuta num endereço e recebe ficheiros.",
+        description=(
+            "Inicia o servidor TCP. Por defeito permanece à escuta para várias ligações "
+            "(cada sessão com novo KEX). Use --once para uma só receção."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     send = sub.add_parser(
@@ -117,6 +142,12 @@ def _build_parser() -> argparse.ArgumentParser:
             default=_norm_hash("SHA256"),
             help="Hash para HKDF, HMAC e assinatura (default: SHA256)",
         )
+        p.add_argument(
+            "--quiet",
+            "-q",
+            action="store_true",
+            help="Omitir linha de créditos no arranque.",
+        )
 
     serve.add_argument(
         "--output-dir",
@@ -127,6 +158,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--verify-key",
         metavar="PATH",
         help="PEM da chave pública ou certificado X.509 para validar assinatura (se o envio foi assinado).",
+    )
+    serve.add_argument(
+        "--once",
+        action="store_true",
+        help="Terminar após uma receção (por defeito o servidor fica à escuta).",
     )
 
     send.add_argument("--file", required=True, metavar="PATH", help="Ficheiro a enviar")
@@ -164,7 +200,7 @@ def _validate_parsed(args: argparse.Namespace) -> None:
 
 def run_server(args: argparse.Namespace) -> None:
     """
-    Escuta num socket, aceita uma sessão, realiza KEX e recebe o ficheiro.
+    Escuta num socket; por defeito aceita várias sessões consecutivas (``--once`` limita a uma).
 
     :param args: argumentos parseados do subcomando ``serve``.
     """
@@ -179,26 +215,53 @@ def run_server(args: argparse.Namespace) -> None:
     server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_sock.bind((args.host, args.port))
     server_sock.listen(1)
-    print(f"[INFO] Listening on {args.host}:{args.port}")
 
-    conn, addr = server_sock.accept()
-    print(f"[INFO] Connection from {addr}")
+    if not getattr(args, "quiet", False):
+        show_credits()
+
+    print(f"[INFO] Listening on {args.host}:{args.port}")
+    if not args.once:
+        print("[INFO] Servidor à escuta para várias transferências; Ctrl+C para parar.")
+
+    session = 0
     try:
-        conn.settimeout(30)
-        k_enc, k_mac = perform_kex(
-            conn,
-            is_server=True,
-            hash_name=args.hash,
-            cipher_config=config,
-        )
-        conn.settimeout(300)
-        receive_file(conn, args.output_dir, k_enc, k_mac, args)
+        while True:
+            try:
+                conn, addr = server_sock.accept()
+            except OSError:
+                break
+            session += 1
+            print(f"\n[INFO] -- Sessão {session} -- ligação de {addr}")
+            conn.settimeout(30)
+            try:
+                k_enc, k_mac = perform_kex(
+                    conn,
+                    is_server=True,
+                    hash_name=args.hash,
+                    cipher_config=config,
+                )
+                conn.settimeout(300)
+                receive_file(conn, args.output_dir, k_enc, k_mac, args)
+            except Exception as e:
+                print(f"[ERROR] Sessão {session}: {e}")
+            finally:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+
+            if args.once:
+                break
+
+            print("[INFO] À espera da próxima ligação...")
+
+    except KeyboardInterrupt:
+        print(f"\n[INFO] Servidor parado após {session} sessão(ões).")
     finally:
         try:
-            conn.close()
+            server_sock.close()
         except OSError:
             pass
-        server_sock.close()
 
 
 def run_client(args: argparse.Namespace) -> None:
@@ -207,6 +270,9 @@ def run_client(args: argparse.Namespace) -> None:
 
     :param args: argumentos parseados do subcomando ``send``.
     """
+    if not getattr(args, "quiet", False):
+        show_credits()
+
     config = validate_config(
         args.cipher or "AES-256-GCM",
         args.hash,
@@ -233,9 +299,24 @@ def run_client(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    """Faz parse dos argumentos, valida e invoca ``serve`` ou ``send``."""
+    """Faz parse dos argumentos, valida e invoca ``serve``, ``send`` ou ``menu``."""
     parser = _build_parser()
     args = parser.parse_args()
+
+    if args.command is None:
+        show_splash()
+        print()
+        print("  Uso: python -m thb {serve,send,menu} [opções]")
+        print("  Ajuda: python -m thb --help")
+        print("  Interativo: python -m thb menu")
+        return
+
+    if args.command == "menu":
+        from thb.interactive import main_menu
+
+        main_menu()
+        return
+
     _validate_parsed(args)
 
     if args.command == "serve":

@@ -76,7 +76,7 @@ def _unprotect_header(payload: bytes, encrypted: bool, k_enc: bytes | None, k_ma
             return _aead_decrypt(k_enc, HEADER_NONCE, payload, cipher)
         except Exception as exc:
             raise ValueError(
-                "Failed to decrypt/verify transfer header — crypto parameters likely mismatch between sender and receiver."
+                "Failed to decrypt/verify transfer header - crypto parameters likely mismatch between sender and receiver."
             ) from exc
     mac_len = hash_digest_size(hash_name)
     if len(payload) < mac_len:
@@ -85,7 +85,7 @@ def _unprotect_header(payload: bytes, encrypted: bool, k_enc: bytes | None, k_ma
     expected = _hmac(k_mac, b"\x00\x00\x00\x00" + body, hash_name)
     if not hmac_stdlib.compare_digest(mac, expected):
         raise ValueError(
-            "Failed to decrypt/verify transfer header — crypto parameters likely mismatch between sender and receiver."
+            "Failed to decrypt/verify transfer header - crypto parameters likely mismatch between sender and receiver."
         )
     return body
 
@@ -261,7 +261,7 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
                     raise ValueError(f"Bloco {i + 1}: verificação HMAC falhou.")
                 pt = chunk
             blocks.append(pt)
-            print(f"[RECV] Block {i + 1}/{nblocks} — integrity OK")
+            print(f"[RECV] Block {i + 1}/{nblocks} - integrity OK")
 
         compressed_data = b"".join(blocks)
         if header["compressed"]:

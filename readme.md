@@ -16,6 +16,21 @@ pip install -r requirements.txt
 
 **Requisito:** o **servidor** (`serve`) e o **cliente** (`send`) devem ser arrancados com os **mesmos** parâmetros `--cipher`, `--hash`, `--compress` e `--no-encrypt`. Não há negociação dinâmica; se divergirem, a decifragem ou verificação do **cabeçalho de transferência** falha.
 
+### Modo interativo (menus)
+
+Para guiar o envio/receção sem memorizar flags, com ecrãs e destinos guardados:
+
+```bash
+python -m thb menu
+```
+
+- Splash UBI / autores na entrada; submenus usam cabeçalho compacto.
+- Os assistentes mostram **dicas** para IP/porta/caminhos; valores entre `()` não se duplicam em `[…]`. Em **Receber**, Enter na primeira pergunta usa **0.0.0.0** e **9000** (definir manual só se responder «sim»).
+- Destinos (IP + alias + porta) ficam em `~/.thb/peers.json` (Windows: `C:\Users\…\.thb\peers.json`).
+- Os comandos `serve` e `send` abaixo mantêm-se para utilizadores avançados.
+
+Se correres só `python -m thb` sem subcomando, aparece o splash e um resumo de uso.
+
 ### Dois terminais (exemplo mínimo)
 
 ```bash
@@ -25,6 +40,23 @@ python -m thb serve --host 127.0.0.1 --port 9000 --output-dir ./received
 # Terminal 2 — emissor
 python -m thb send --host 127.0.0.1 --port 9000 --file ./meuficheiro.pdf
 ```
+
+### Servidor persistente (várias receções)
+
+Por defeito o `serve` **fica à escuta** após cada ficheiro: cada nova ligação faz um **novo acordo X25519** e novas chaves (sessões independentes). Interrompe com **Ctrl+C**.
+
+```bash
+python -m thb serve --host 0.0.0.0 --port 9000 --output-dir ./received
+# recebe ficheiro 1… depois 2… Ctrl+C para parar
+```
+
+Comportamento **antigo** (uma receção e o processo termina):
+
+```bash
+python -m thb serve --host 127.0.0.1 --port 9000 --output-dir ./received --once
+```
+
+Use `--quiet` / `-q` em `serve` ou `send` para omitir a linha de créditos no arranque (útil em scripts).
 
 ### Compressão e ChaCha20-Poly1305
 
@@ -107,16 +139,19 @@ sequenceDiagram
 
 ## Limitações (prototipagem)
 
-- Uma **única sessão** por arranque do servidor (`listen(1)`, um `accept`).
+- O socket de escuta usa `listen(1)`; o servidor pode atender **várias sessões em sequência** (cada uma termina e volta a `accept`), exceto com `--once`.
 - **Salt fixo** na HKDF (`thb-v1-salt`); não é negociado.
-- Sem **forward secrecy** entre sessões (cada sessão tem novo X25519 efémero, mas o desenho não é “Signal-like”).
+- **Forward secrecy** apenas *entre sessões* no sentido de novo X25519 por ligação; o desenho global não é estilo “Signal”.
 - Compressão apenas **zlib**.
 - **Timeouts:** 30 s durante o KEX e 300 s após, em **ambos** os lados (`socket.settimeout`).
 - Estados de erro remoto são enviados como **UTF-8** em `STATUS_ERROR` (sem JSON).
 
 ## Estrutura do pacote
 
-- `thb/cli.py` — argparse, `serve` / `send`
+- `thb/cli.py` — argparse, `serve` / `send` / `menu`, `--quiet`, `--once` no servidor
+- `thb/interactive.py` — menus e construção de argumentos para reutilizar a lógica do CLI
+- `thb/branding.py` — splash UBI, cabeçalho compacto, cores ANSI
+- `thb/peers.py` — `~/.thb/peers.json` (alias, host, porta)
 - `thb/protocol.py` — framing 4 bytes + tipo + payload
 - `thb/kex.py` — X25519, HKDF, fingerprint
 - `thb/transfer.py` — compressão, partição >12 MiB (blocos de 4 MiB), envio/receção
