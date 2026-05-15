@@ -199,7 +199,7 @@ def _validate_parsed(args: argparse.Namespace) -> None:
         if not os.access(path, os.R_OK):
             raise SystemExit(f"erro: ficheiro sem permissão de leitura: {path}")
 
-    validate_config(
+    args.crypto_config = validate_config(
         args.cipher or "AES-256-GCM",
         args.hash,
         args.no_encrypt,
@@ -212,11 +212,7 @@ def run_server(args: argparse.Namespace) -> None:
 
     :param args: argumentos parseados do subcomando ``serve``.
     """
-    config = validate_config(
-        args.cipher or "AES-256-GCM",
-        args.hash,
-        args.no_encrypt,
-    )
+    config = args.crypto_config
     os.makedirs(args.output_dir, exist_ok=True)
 
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -242,11 +238,13 @@ def run_server(args: argparse.Namespace) -> None:
             print(f"\n[INFO] -- Sessão {session} -- ligação de {addr}")
             conn.settimeout(30)
             try:
-                k_enc, k_mac = perform_kex(
+                k_enc, k_mac, _ = perform_kex(
                     conn,
                     is_server=True,
                     hash_name=args.hash,
                     cipher_config=config,
+                    tofu_host=addr[0],
+                    tofu_port=args.port,
                 )
                 conn.settimeout(300)
                 receive_file(conn, args.output_dir, k_enc, k_mac, args)
@@ -272,30 +270,30 @@ def run_server(args: argparse.Namespace) -> None:
             pass
 
 
-def run_client(args: argparse.Namespace) -> None:
+def run_client(args: argparse.Namespace) -> str | None:
     """
     Liga ao servidor, realiza KEX e envia o ficheiro.
 
     :param args: argumentos parseados do subcomando ``send``.
+    :return: fingerprint TOFU do par ([KEY FINGERPRINT]) ou None se a ligação falhar antes do KEX.
     """
     if not getattr(args, "quiet", False):
         show_credits()
 
-    config = validate_config(
-        args.cipher or "AES-256-GCM",
-        args.hash,
-        args.no_encrypt,
-    )
+    config = args.crypto_config
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(30)
     sock.connect((args.host, args.port))
     print(f"[INFO] Connected to {args.host}:{args.port}")
+    fp: str | None = None
     try:
-        k_enc, k_mac = perform_kex(
+        k_enc, k_mac, fp = perform_kex(
             sock,
             is_server=False,
             hash_name=args.hash,
             cipher_config=config,
+            tofu_host=args.host,
+            tofu_port=args.port,
         )
         sock.settimeout(300)
         send_file(sock, args.file, k_enc, k_mac, args)
@@ -304,6 +302,7 @@ def run_client(args: argparse.Namespace) -> None:
             sock.close()
         except OSError:
             pass
+    return fp
 
 
 def main() -> None:

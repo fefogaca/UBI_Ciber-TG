@@ -102,7 +102,7 @@ def _manage_peers() -> None:
             alias = input(f"{Colors.PROMPT}>{Colors.RESET} Alias: ").strip()
             _tip(
                 "IP = endereço IPv4 do outro PC (ex.: 192.168.1.50). "
-                "Neste Mac a receber na mesma máquina: 127.0.0.1",
+                "No mesmo computador a receber localmente: 127.0.0.1",
             )
             host = input(f"{Colors.PROMPT}>{Colors.RESET} IP (host): ").strip()
             port_s = _prompt_line("Porta", "9000", parens="9000")
@@ -284,8 +284,9 @@ def _flow_send() -> None:
     show_header()
     print()
 
+    fp: str | None = None
     try:
-        run_client(args)
+        fp = run_client(args)
     except Exception as e:
         print(f"{Colors.ERR}[ERRO] {e}{Colors.RESET}")
         input(f"{Colors.DIM}Enter para voltar ao menu...{Colors.RESET}")
@@ -298,8 +299,16 @@ def _flow_send() -> None:
             print(f"{Colors.OK}Destino guardado.{Colors.RESET}")
         input(f"{Colors.DIM}Enter...{Colors.RESET}")
 
+    if fp and _prompt_yn(
+        "Guardar o [KEY FINGERPRINT] deste par em peers.json (TOFU) para alertas futuros?",
+        False,
+    ):
+        peers_mod.save_fingerprint(host, port, fp)
+        print(f"{Colors.OK}Fingerprint guardado para {host}:{port}.{Colors.RESET}")
+
 
 def _flow_receive() -> None:
+    from src import kex
     from src.cli import _validate_parsed, run_server
 
     clear_screen()
@@ -379,6 +388,21 @@ def _flow_receive() -> None:
         print(f"\n{Colors.DIM}Interrompido.{Colors.RESET}")
     except Exception as e:
         print(f"{Colors.ERR}[ERRO] {e}{Colors.RESET}")
+
+    if kex.LAST_SESSION_PEER_FINGERPRINT and kex.LAST_SESSION_TOFU_KEY:
+        th, tp = kex.LAST_SESSION_TOFU_KEY
+        if not args.once:
+            _tip(
+                "Servidor em modo contínuo: o fingerprint abaixo é só o da última sessão "
+                "antes de parar (Ctrl+C).",
+            )
+        if _prompt_yn(
+            "Guardar o último [KEY FINGERPRINT] do par em peers.json (TOFU)?",
+            False,
+        ):
+            peers_mod.save_fingerprint(th, tp, kex.LAST_SESSION_PEER_FINGERPRINT)
+            print(f"{Colors.OK}Fingerprint guardado para {th}:{tp}.{Colors.RESET}")
+
     input(f"{Colors.DIM}Enter para voltar ao menu...{Colors.RESET}")
 
 

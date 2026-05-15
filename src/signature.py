@@ -6,20 +6,10 @@ from pathlib import Path
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
 
-
-def _hash_algo(hash_name: str) -> hashes.HashAlgorithm:
-    h = hash_name.upper()
-    if h == "SHA256":
-        return hashes.SHA256()
-    if h == "SHA384":
-        return hashes.SHA384()
-    if h == "SHA512":
-        return hashes.SHA512()
-    raise ValueError(f"Hash não suportado para assinatura: {hash_name!r}")
+from src.crypto_config import hash_to_cryptography
 
 
 def detect_sign_algo(private_key) -> str:
@@ -55,7 +45,7 @@ def sign_data(private_key_path: str, data: bytes, hash_name: str) -> tuple[bytes
     pem = Path(private_key_path).read_bytes()
     private_key = load_pem_private_key(pem, password=None)
     algo = detect_sign_algo(private_key)
-    hash_algo = _hash_algo(hash_name)
+    hash_algo = hash_to_cryptography(hash_name)
 
     if isinstance(private_key, ec.EllipticCurvePrivateKey):
         signature = private_key.sign(data, ec.ECDSA(hash_algo))
@@ -128,7 +118,7 @@ def verify_signature(
     """
     public_key = load_verify_key(verify_key_path)
     _sign_algo_matches_key(sign_algo, public_key)
-    hash_algo = _hash_algo(hash_name)
+    hash_algo = hash_to_cryptography(hash_name)
 
     try:
         if isinstance(public_key, ec.EllipticCurvePublicKey):

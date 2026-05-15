@@ -13,7 +13,7 @@ from typing import Any
 import hmac as hmac_stdlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 
-from src.crypto_config import hash_digest_size
+from src.crypto_config import hash_digest_size, hash_to_stdlib
 from src.protocol import (
     BLOCK_DATA,
     SIGNATURE,
@@ -30,19 +30,9 @@ BLOCK_4MI = 4 * 1024 * 1024
 HEADER_NONCE = b"\x00" * 12
 
 
-def _hashlib_name(hash_name: str) -> str:
-    h = hash_name.upper()
-    if h == "SHA256":
-        return "sha256"
-    if h == "SHA384":
-        return "sha384"
-    if h == "SHA512":
-        return "sha512"
-    raise ValueError(f"Hash HMAC inválido: {hash_name!r}")
-
-
 def _hmac(key: bytes, data: bytes, hash_name: str) -> bytes:
-    return hmac_stdlib.new(key, data, getattr(__import__("hashlib"), _hashlib_name(hash_name))).digest()
+    hl = __import__("hashlib")
+    return hmac_stdlib.new(key, data, getattr(hl, hash_to_stdlib(hash_name))).digest()
 
 
 def _aead_encrypt(k_enc: bytes, nonce: bytes, plaintext: bytes, cipher: str) -> bytes:
@@ -224,6 +214,24 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
         if header.get("encrypted") != encrypted:
             raise ValueError("Cabeçalho indica modo de cifra diferente do configurado localmente.")
 
+        if encrypted:
+            local_c = (cipher or "").upper()
+            hdr_cipher = header.get("cipher")
+            remote_c = (hdr_cipher or "").upper()
+            if remote_c != local_c:
+                raise ValueError(
+                    f"Cipher mismatch: sender used {hdr_cipher!r}, receiver expects {cipher!r} "
+                    f"— use the same --cipher flag on both sides."
+                )
+
+        local_h = args.hash.upper()
+        remote_h = str(header["hash"]).upper()
+        if remote_h != local_h:
+            raise ValueError(
+                f"Hash mismatch: sender used {header['hash']!r}, receiver expects {args.hash!r} "
+                f"— use the same --hash flag on both sides."
+            )
+
         if header["signed"] and not args.verify_key:
             msg = "Transfer header indicates a signed file, but no --verify-key was provided. Aborting."
             print(f"[ERROR] {msg}")
@@ -281,6 +289,7 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
             stype, sig_payload = recv_msg(sock)
             if stype != SIGNATURE:
                 raise ValueError(f"Esperado SIGNATURE após blocos, recebido 0x{stype:02x}")
+            # verify_signature raises ValueError on failure — caught by outer except below.
             sig_mod.verify_signature(
                 args.verify_key,
                 original_data,

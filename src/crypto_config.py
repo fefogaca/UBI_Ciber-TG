@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from cryptography.hazmat.primitives import hashes
+
 CIPHERS = {
     "AES-128-GCM": {"key_bits": 128, "nonce_bytes": 12, "tag_bytes": 16},
     "AES-256-GCM": {"key_bits": 256, "nonce_bytes": 12, "tag_bytes": 16},
@@ -39,6 +41,30 @@ def validate_config(cipher: str, hash_name: str, no_encrypt: bool) -> dict:
     cfg = {"no_encrypt": False, "cipher": c, "hash": h}
     cfg.update(CIPHERS[c])
     return cfg
+
+
+def hash_to_stdlib(hash_name: str) -> str:
+    """Mapeia SHA256/384/512 para o nome usado pelo módulo hashlib da biblioteca padrão."""
+    h = hash_name.upper()
+    if h == "SHA256":
+        return "sha256"
+    if h == "SHA384":
+        return "sha384"
+    if h == "SHA512":
+        return "sha512"
+    raise ValueError(f"Hash HMAC/stdlib inválido: {hash_name!r}")
+
+
+def hash_to_cryptography(hash_name: str) -> hashes.HashAlgorithm:
+    """Instância de algoritmo de hash para HKDF, ECDSA, RSA-PSS, etc. (``cryptography``)."""
+    h = hash_name.upper()
+    if h == "SHA256":
+        return hashes.SHA256()
+    if h == "SHA384":
+        return hashes.SHA384()
+    if h == "SHA512":
+        return hashes.SHA512()
+    raise ValueError(f"Hash não suportado: {hash_name!r}")
 
 
 def hash_digest_size(hash_name: str) -> int:

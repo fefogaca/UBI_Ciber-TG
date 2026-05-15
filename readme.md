@@ -1,5 +1,7 @@
 # TWO-HEADED-BEAST
 
+![Universidade da Beira Interior](images/ubi-banner.png)
+
 Aplicação em **Python 3**: o código do pacote está em **[`src/`](src/)** na raiz do repositório; arranque com **`python -m src`** a partir dessa raiz (onde está `requirements.txt`). Transmissão **TCP** com acordo **X25519** (ECDH), derivação **HKDF**, integridade por bloco (**AEAD** ou **HMAC**), **zlib** opcional e assinatura opcional (**ECDSA** / **RSA-PSS**). A biblioteca [`cryptography`](https://cryptography.io/) usa tipicamente **OpenSSL** como backend (o handshake no código é X25519 + HKDF, sem invocar o executável `openssl` para o KEX).
 
 ## Obter o código
@@ -7,13 +9,14 @@ Aplicação em **Python 3**: o código do pacote está em **[`src/`](src/)** na 
 Clona o repositório no GitHub e entra na pasta do projeto (o nome da pasta depende do remoto):
 
 ```bash
-git clone https://github.com/<organizacao>/<repositorio>.git
-cd <repositorio>
+git clone https://github.com/fefogaca/Ciberseguranca-TG.git
+cd Ciberseguranca-TG
 ```
 
 ## Índice
 
 - [Obter o código](#obter-o-código)
+- [Diagramas](#diagramas)
 - [Requisitos](#requisitos)
 - [Instalação](#instalação)
   - [Windows](#windows)
@@ -33,6 +36,18 @@ cd <repositorio>
 - [Resolução de problemas](#resolução-de-problemas)
 - [Estrutura do pacote `src/`](#estrutura-do-pacote-src)
 - [Contexto académico](#contexto-académico)
+
+## Diagramas
+
+Figuras de apoio ao relatório e à apresentação do TWO-HEADED-BEAST.
+
+### Arquitectura do sistema
+
+![Diagrama do sistema](images/diagrama-do-sistema.png)
+
+### Cenário de ataque (modelo de ameaça)
+
+![Diagrama do ataque](images/diagrama-do-ataque.png)
 
 ## Requisitos
 
@@ -182,6 +197,8 @@ Assistentes para enviar/receber, gestão de destinos guardados em:
 | Unix      | `~/.two-headed-beast/peers.json` |
 | Windows   | `C:\Users\<utilizador>\.two-headed-beast\peers.json` |
 
+Ao **enviar** para um endereço novo no assistente, guarde primeiro o **destino** (alias) e **depois** o opt-in do [KEY FINGERPRINT] (TOFU), para o `fingerprint` ficar na mesma entrada em `peers.json`. Ao **receber** em modo contínuo (várias sessões), o programa só conhece o fingerprint da **última** sessão antes de interromper com Ctrl+C.
+
 Sem subcomando, `python -m src` mostra o splash e um resumo de uso.
 
 ## Linha de comando avançada
@@ -316,7 +333,7 @@ sequenceDiagram
 - Se o tamanho do payload **após compressão opcional** (`zlib`) for **superior a 12 MiB**, os dados são partidos em blocos de **4 MiB**; cada bloco é tratado como mensagem **BLOCK_DATA** com integridade própria (AEAD ou HMAC).
 - Se o payload comprimido for **≤ 12 MiB**, há um único bloco com o tamanho total.
 
-> **Nota para o enunciado / docente:** o limiar de **12 MiB** aplica-se ao **tamanho usado para envio** (dados já comprimidos se `--compress` estiver ativo), não necessariamente ao tamanho do ficheiro em disco antes da compressão. Para alterar esse critério para “só tamanho original”, seria preciso mudar `src/transfer.py`.
+> **Decisão de implementação (12 MiB):** a **partição em blocos** de 4 MiB activa-se quando o **payload após compressão opcional** (`zlib`) é **superior a 12 MiB**, não quando o ficheiro original em disco excede esse valor. Ou seja, um ficheiro grande pode **não** ser partido se comprimir abaixo do limiar; um ficheiro mais pequeno pode ser partido se compressão estiver desactivada e o payload raw for grande. Isto está alinhado com a definição “tamanho efectivo a transmitir”. Se o enunciado exigir explicitamente o **tamanho pré-compressão**, é necessário alterar `src/transfer.py` (`send_file`) para calcular `num_blocks` / `block_size` a partir de `len(original_data)`.
 
 ## KEX, OpenSSL e enunciado académico
 
@@ -368,4 +385,32 @@ sequenceDiagram
 
 ## Contexto académico
 
-Projeto académico — disciplina de **Cibersegurança** (UBI). Ver o enunciado **TWO-HEADED-BEAST** no material da disciplina.
+Projeto da disciplina de **Cibersegurança** (Licenciatura em Informática Web, Móvel e na Nuvem — UBI, 2025/2026).
+
+O texto integral do enunciado encontra-se em **[`Enunciado.md`](Enunciado.md)**.
+
+### Requisitos do enunciado (TWO-HEADED-BEAST)
+
+**Obrigatórios:**
+
+- Ficheiros maiores que 12 MB repartidos em blocos, com **integridade por bloco** garantida pelo programa.
+- Modo sem cifra: **autenticação da mensagem (MAC)** no cabeçalho e em cada bloco.
+- Troca de chaves de sessão via **Diffie–Hellman** ou **criptografia de chave pública** (com possibilidade de recorrer ao OpenSSL).
+- Opção de **comprimir** o ficheiro **antes** de cifrar.
+- Perante falha de verificação de integridade ou processamento incorrecto, deve ser exibido um **erro em ambos os lados** da comunicação.
+
+**Opcionais implementados:**
+
+- Assinatura digital com chave privada (**ECDSA** P-256/P-384 ou **RSA-PSS**), podendo usar OpenSSL para gerar as chaves.
+- Verificação da assinatura com chave pública PEM ou certificado **X.509**.
+- Escolha da cifra (`AES-128-GCM`, `AES-256-GCM`, `CHACHA20-POLY1305`) e do comprimento da chave.
+- Escolha da função de hash (`SHA256`, `SHA384`, `SHA512`).
+- **Help** completo com exemplos (`python -m src --help`).
+
+### Modelo de ameaça trabalhado na apresentação
+
+**MITM** no acordo ECDH não autenticado — ver [Vetores de ataque e mitigações](#vetores-de-ataque-e-mitigações) e o diagrama em [`images/diagrama-do-ataque.png`](images/diagrama-do-ataque.png).
+
+### Autores
+
+[Afonso Esteves](https://github.com/flateri) 55047 · Felipe Dourado 53394 · [João Vitor Silva](https://github.com/joaovitor-oss) 53396 · [Rui Machado](https://github.com/ruimachado-ai) 53867 · [Tiago Pereira](https://github.com/tiagopereira001) 55019

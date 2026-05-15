@@ -10,7 +10,7 @@ PEERS_FILE = PEERS_DIR / "peers.json"
 
 
 def _ensure_dir() -> None:
-    PEERS_DIR.mkdir(parent_ok=True, mode=0o700)
+    PEERS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 
 def load_peers() -> list[dict]:
@@ -56,3 +56,26 @@ def remove_peer(alias: str) -> bool:
 
 def list_peers() -> list[dict]:
     return load_peers()
+
+
+def get_fingerprint(host: str, port: int) -> str | None:
+    """Devolve o fingerprint TOFU guardado para esta combinação host/porta, se existir."""
+    port = int(port)
+    for p in load_peers():
+        if str(p.get("host", "")) == host and int(p.get("port", 0)) == port:
+            fp = p.get("fingerprint")
+            return str(fp) if fp else None
+    return None
+
+
+def save_fingerprint(host: str, port: int, fingerprint: str) -> None:
+    """Associa ou actualiza o fingerprint TOFU a uma entrada com o mesmo host e porta."""
+    port = int(port)
+    peers = load_peers()
+    for p in peers:
+        if str(p.get("host", "")) == host and int(p.get("port", 0)) == port:
+            p["fingerprint"] = fingerprint
+            save_peers(peers)
+            return
+    peers.append({"alias": host, "host": host, "port": port, "fingerprint": fingerprint})
+    save_peers(peers)
