@@ -32,6 +32,7 @@ source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+> [!NOTE]
 > No macOS/Linux, se `python` não for reconhecido ao criar o ambiente virtual, usa `python3 -m venv .venv`. Após a activação do venv, usa sempre `python`.
 
 Terminal 1 — receptor:
@@ -44,7 +45,8 @@ Terminal 2 — emissor:
 python -m src send --port 9000 --file ./documento.pdf
 ```
 
-Para receber de **outra máquina na LAN**, usa `--host 0.0.0.0` no `serve` e aponta o `send` para o IPv4 do receptor. Confirma que a porta TCP escolhida está aberta no firewall.
+> [!TIP]
+> Para receber de **outra máquina na LAN**, usa `--host 0.0.0.0` no `serve` e aponta o `send` para o IPv4 do receptor. Confirma que a porta TCP escolhida está aberta no firewall.
 
 ## Modo interativo
 
@@ -56,7 +58,8 @@ Assistente passo a passo para enviar e receber, com gestão de destinos guardado
 
 ## Referência de comandos
 
-Ambos os lados devem usar os mesmos `--cipher`, `--hash`, `--compress` e `--no-encrypt`. Não existe negociação automática de parâmetros.
+> [!IMPORTANT]
+> Ambos os lados devem usar os mesmos `--cipher`, `--hash`, `--compress` e `--no-encrypt`. Não existe negociação automática de parâmetros — se divergirem, o cabeçalho de transferência não será verificado correctamente.
 
 ### Cifras e hashes
 
@@ -109,11 +112,15 @@ O protocolo corre em três fases: **ligação TCP → acordo de chaves X25519 (K
 
 ## Modelo de ameaça
 
-> O enunciado pede explicitamente que se identifique uma forma de atacar o sistema e se apresente na defesa.
+> [!NOTE]
+> O enunciado pede explicitamente que se identifique uma forma de atacar o sistema e se apresente na defesa do trabalho.
 
 ![Diagrama do ataque](images/diagrama-do-ataque.png)
 
-O ataque demonstrado é o **MITM no acordo ECDH não autenticado**: as chaves X25519 são efémeras mas sem vinculação de identidade, pelo que um intermediário pode negociar sessões separadas com cada lado sem que a transferência falhe. A mitigação parcial implementada é o **[KEY FINGERPRINT]** impresso no terminal de ambos os lados após o KEX — se os valores divergirem, existe intermediário. O modo interativo permite persistir e comparar fingerprints entre sessões (`peers.json`).
+O ataque demonstrado é o **MITM no acordo ECDH não autenticado**: as chaves X25519 são efémeras mas sem vinculação de identidade, pelo que um intermediário pode negociar sessões separadas com cada lado sem que a transferência falhe.
+
+> [!WARNING]
+> Após o KEX, cada terminal imprime um **[KEY FINGERPRINT]**. Se os valores nos dois lados divergirem, existe intermediário. O modo interativo permite persistir e comparar fingerprints entre sessões via `peers.json`.
 
 ## Estrutura do código
 
@@ -131,5 +138,5 @@ O ataque demonstrado é o **MITM no acordo ECDH não autenticado**: as chaves X2
 
 ## Autores
 
-Afonso Esteves · Felipe Dourado · João Vitor Silva · Rui Machado · Tiago Pereira  
+[Afonso Esteves](https://github.com/flateri) · Felipe Dourado · [João Vitor Silva](https://github.com/joaovitor-o-ss) · [Rui Machado](https://github.com/ruimachado-ai) · [Tiago Pereira](https://github.com/tiagopereira001)  
 UBI — Universidade da Beira Interior, Cibersegurança 2025/2026
