@@ -1,8 +1,8 @@
 """
 Modo interativo com menus (sem alterar protocolo nem transfer).
 
-Reutiliza :func:`thb.cli._validate_parsed`, :func:`thb.cli.run_client` e
-:func:`thb.cli.run_server`.
+Reutiliza :func:`src.cli._validate_parsed`, :func:`src.cli.run_client` e
+:func:`src.cli.run_server`.
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ import argparse
 import os
 import sys
 
-from thb.branding import Colors, clear_screen, show_header, show_splash
-from thb.crypto_config import CIPHERS, HASHES
-from thb import peers as peers_mod
+from src.branding import Colors, clear_screen, show_header, show_splash
+from src.crypto_config import CIPHERS, HASHES
+from src import peers as peers_mod
 
 
 def _strip_wrapping_quotes(path: str) -> str:
@@ -157,7 +157,7 @@ def _choose_hash_interactive() -> str:
 
 
 def _flow_send() -> None:
-    from thb.cli import _validate_parsed, run_client
+    from src.cli import _validate_parsed, run_client
 
     clear_screen()
     show_header()
@@ -300,7 +300,7 @@ def _flow_send() -> None:
 
 
 def _flow_receive() -> None:
-    from thb.cli import _validate_parsed, run_server
+    from src.cli import _validate_parsed, run_server
 
     clear_screen()
     show_header()

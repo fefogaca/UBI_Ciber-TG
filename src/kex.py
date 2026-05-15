@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from thb.protocol import HANDSHAKE_PUBKEY, recv_msg, send_msg
+from src.protocol import HANDSHAKE_PUBKEY, recv_msg, send_msg
 
 
 def _hash_from_name(hash_name: str) -> hashes.HashAlgorithm:

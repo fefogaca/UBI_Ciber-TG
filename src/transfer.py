@@ -13,8 +13,8 @@ from typing import Any
 import hmac as hmac_stdlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 
-from thb.crypto_config import hash_digest_size
-from thb.protocol import (
+from src.crypto_config import hash_digest_size
+from src.protocol import (
     BLOCK_DATA,
     SIGNATURE,
     STATUS_ERROR,
@@ -23,7 +23,7 @@ from thb.protocol import (
     recv_msg,
     send_msg,
 )
-from thb import signature as sig_mod
+from src import signature as sig_mod
 
 LARGE_THRESHOLD = 12 * 1024 * 1024
 BLOCK_4MI = 4 * 1024 * 1024

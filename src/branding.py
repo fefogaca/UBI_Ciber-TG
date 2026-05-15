@@ -131,6 +131,6 @@ def show_header() -> None:
 def show_credits() -> None:
     """Uma linha para arranque de serve/send sem --quiet."""
     print(
-        f"{Colors.PROMPT}thb{Colors.RESET}{Colors.DIM} · TWO-HEADED-BEAST · "
+        f"{Colors.PROMPT}src{Colors.RESET}{Colors.DIM} · TWO-HEADED-BEAST · "
         f"UBI Cibersegurança · 2025/2026{Colors.RESET}"
     )

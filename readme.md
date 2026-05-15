@@ -1,123 +1,307 @@
 # TWO-HEADED-BEAST
 
-Aplicação de linha de comandos em **Python 3** para transferir ficheiros entre dois processos via **TCP**, com acordo de chaves **X25519**, derivação **HKDF**, integridade por bloco (**AEAD** ou **HMAC**), compressão **zlib** opcional e assinatura digital opcional (**ECDSA** ou **RSA-PSS**). A biblioteca [`cryptography`](https://cryptography.io/) utiliza **OpenSSL** por baixo, alinhando o projeto ao enunciado da unidade curricular.
+Aplicação em **Python 3**: o código do pacote está em **[`src/`](src/)** na raiz do repositório; arranque com **`python -m src`** a partir dessa raiz (onde está `requirements.txt`). Transmissão **TCP** com acordo **X25519** (ECDH), derivação **HKDF**, integridade por bloco (**AEAD** ou **HMAC**), **zlib** opcional e assinatura opcional (**ECDSA** / **RSA-PSS**). A biblioteca [`cryptography`](https://cryptography.io/) usa tipicamente **OpenSSL** como backend (o handshake no código é X25519 + HKDF, sem invocar o executável `openssl` para o KEX).
+
+## Obter o código
+
+Clona o repositório no GitHub e entra na pasta do projeto (o nome da pasta depende do remoto):
+
+```bash
+git clone https://github.com/<organizacao>/<repositorio>.git
+cd <repositorio>
+```
+
+## Índice
+
+- [Obter o código](#obter-o-código)
+- [Requisitos](#requisitos)
+- [Instalação](#instalação)
+  - [Windows](#windows)
+  - [macOS e Linux](#macos-e-linux)
+- [Primeiro teste (dois terminais na mesma máquina)](#primeiro-teste-dois-terminais-na-mesma-máquina)
+- [Rede local: duas máquinas](#rede-local-duas-máquinas)
+  - [Cenário A (Windows recebe, Mac envia)](#cenário-a-windows-recebe-mac-envia)
+  - [Cenário B (Mac recebe, Windows envia)](#cenário-b-mac-recebe-windows-envia)
+- [Modo interativo (menu)](#modo-interativo-menu)
+- [Linha de comando avançada](#linha-de-comando-avançada)
+- [O protocolo em camadas](#o-protocolo-em-camadas)
+- [Cifras e hashes](#cifras-e-hashes)
+- [Ficheiros grandes e partição em blocos](#ficheiros-grandes-e-partição-em-blocos)
+- [KEX, OpenSSL e enunciado académico](#kex-openssl-e-enunciado-académico)
+- [Vetores de ataque e mitigações](#vetores-de-ataque-e-mitigações)
+- [Limitações](#limitações)
+- [Resolução de problemas](#resolução-de-problemas)
+- [Estrutura do pacote `src/`](#estrutura-do-pacote-src)
+- [Contexto académico](#contexto-académico)
+
+## Requisitos
+
+- **Python 3** nas máquinas que correm `serve` / `send`.
+- O mesmo código do projeto (Git, pasta partilhada, etc.).
+- Para testes entre PCs: **mesma rede local** (mesmo Wi‑Fi ou Ethernet ao mesmo router), salvo túneis/VPN que expõem TCP.
+
+**Regra crítica:** em cada transferência, `serve` e `send` devem usar os **mesmos** `--cipher`, `--hash`, `--compress` e `--no-encrypt`. Não há negociação no protocolo.
 
 ## Instalação
 
-Recomenda-se um ambiente virtual:
+Na **raiz do repositório** (pasta que contém `requirements.txt` e a pasta `src/`), onde vais correr `python -m src`:
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Linux/macOS
+### Windows
+
+No **PowerShell** ou **CMD**:
+
+```powershell
+cd "C:\caminho\para\o-repositorio-clonado"
+python -m venv .venv
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Uso rápido
+Se `python` não for reconhecido, experimenta o launcher:
 
-**Requisito:** o **servidor** (`serve`) e o **cliente** (`send`) devem ser arrancados com os **mesmos** parâmetros `--cipher`, `--hash`, `--compress` e `--no-encrypt`. Não há negociação dinâmica; se divergirem, a decifragem ou verificação do **cabeçalho de transferência** falha.
-
-### Modo interativo (menus)
-
-Para guiar o envio/receção sem memorizar flags, com ecrãs e destinos guardados:
-
-```bash
-python -m thb menu
+```powershell
+py -m venv .venv
+.\.venv\Scripts\activate
+py -m pip install -r requirements.txt
 ```
 
-- Splash UBI / autores na entrada; submenus usam cabeçalho compacto.
-- Os assistentes mostram **dicas** para IP/porta/caminhos; valores entre `()` não se duplicam em `[…]`. Em **Receber**, Enter na primeira pergunta usa **0.0.0.0** e **9000** (definir manual só se responder «sim»).
-- Destinos (IP + alias + porta) ficam em `~/.thb/peers.json` (Windows: `C:\Users\…\.thb\peers.json`).
-- Os comandos `serve` e `send` abaixo mantêm-se para utilizadores avançados.
-
-Se correres só `python -m thb` sem subcomando, aparece o splash e um resumo de uso.
-
-### Dois terminais (exemplo mínimo)
+### macOS e Linux
 
 ```bash
-# Terminal 1 — receptor
-python -m thb serve --host 127.0.0.1 --port 9000 --output-dir ./received
-
-# Terminal 2 — emissor
-python -m thb send --host 127.0.0.1 --port 9000 --file ./meuficheiro.pdf
+cd ~/caminho/para/o-repositorio-clonado
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Servidor persistente (várias receções)
+## Primeiro teste (dois terminais na mesma máquina)
 
-Por defeito o `serve` **fica à escuta** após cada ficheiro: cada nova ligação faz um **novo acordo X25519** e novas chaves (sessões independentes). Interrompe com **Ctrl+C**.
+Terminal 1 (receptor):
 
 ```bash
-python -m thb serve --host 0.0.0.0 --port 9000 --output-dir ./received
-# recebe ficheiro 1… depois 2… Ctrl+C para parar
+python -m src serve --host 127.0.0.1 --port 9000 --output-dir ./received
 ```
 
-Comportamento **antigo** (uma receção e o processo termina):
+No Windows podes usar `.\received` em alternativa a `./received`.
+
+Terminal 2 (emissor):
 
 ```bash
-python -m thb serve --host 127.0.0.1 --port 9000 --output-dir ./received --once
+python -m src send --host 127.0.0.1 --port 9000 --file ./meuficheiro.pdf
 ```
 
-Use `--quiet` / `-q` em `serve` ou `send` para omitir a linha de créditos no arranque (útil em scripts).
+## Rede local: duas máquinas
+
+> **Nota:** o processo que **recebe** (`serve`) deve usar `--host 0.0.0.0` para aceitar ligações **de outras máquinas** na LAN, e a **porta TCP** (ex.: 9000) deve estar permitida no **firewall** do sistema receptor.
+
+### Cenário A: Windows recebe, Mac envia
+
+**Pré-requisitos comuns:** mesmo projeto nas duas máquinas; Python 3; mesmos flags criptográficos nos exemplos abaixo (omissões: AES-256-GCM, SHA256, sem `--compress`).
+
+#### A1. Windows — preparação
+
+1. Instalar Python a partir de [python.org/downloads/windows](https://www.python.org/downloads/windows/) (opção **Add python.exe to PATH** quando existir).
+2. Na pasta do projeto, criar venv e dependências (ver [Windows](#windows)).
+3. **Firewall — regra de entrada TCP** (exemplo para porta **9000**):
+   1. Painel de controlo → Firewall do Windows → Definições avançadas.
+   2. Regras de entrada → Nova regra → **Porta** → **TCP** → portas locais **9000**.
+   3. **Permitir a ligação**; perfis: pelo menos **Privado**; nome: ex. `Transferência TCP 9000`.
+4. Descobrir o **IPv4** da máquina Windows: no PowerShell, `ipconfig` — anotar o endereço da interface em uso (Wi‑Fi ou Ethernet), por exemplo `192.168.1.45`.
+
+#### A2. Windows — iniciar o servidor
+
+```powershell
+python -m src serve --host 0.0.0.0 --port 9000 --output-dir .\received
+```
+
+Manter o terminal aberto. O ficheiro recebido aparece em `received\` com o **mesmo nome** base que o enviado.
+
+#### A3. Mac — enviar
+
+```bash
+cd ~/caminho/para/o-repositorio-clonado
+source .venv/bin/activate
+python -m src send --host 192.168.1.45 --port 9000 --file "$HOME/Imagens/foto.png"
+```
+
+(Substituir o IP pelo IPv4 do Windows e o caminho pelo ficheiro real.)
+
+### Cenário B: Mac recebe, Windows envia
+
+1. No **Mac**, descobre o IPv4 (Definições de rede ou `ifconfig` / `ip link` em Linux puro).
+2. No Mac, corre `serve` com `--host 0.0.0.0` e a pasta de saída desejada.
+3. Se o **firewall do macOS** bloquear entradas, permite Python ou a porta em **Definições → Rede → Firewall** (conforme versão do sistema).
+4. No **Windows**, corre `send` com `--host <IPv4_do_Mac>` e caminho `C:\...\ficheiro.ext`.
+
+Os mesmos avisos sobre **parâmetros iguais** e **porta aberta** aplicam-se; só trocam os papéis das máquinas.
+
+### Exemplos na LAN (compressão / outra cifra / assinatura)
+
+**Compressão** — os **dois** lados com `--compress`:
+
+```powershell
+python -m src serve --host 0.0.0.0 --port 9000 --output-dir .\received --compress
+```
+
+```bash
+python -m src send --host 192.168.x.x --port 9000 --file "/caminho/imagem.png" --compress
+```
+
+**ChaCha20-Poly1305** — mesmos flags nos dois:
+
+```powershell
+python -m src serve --host 0.0.0.0 --port 9000 --output-dir .\received --cipher CHACHA20-POLY1305
+```
+
+```bash
+python -m src send --host 192.168.x.x --port 9000 --file "/caminho/imagem.png" --cipher CHACHA20-POLY1305
+```
+
+**Assinatura** (gerar PEM com OpenSSL; copiar chaves para ambas as máquinas):
+
+```powershell
+python -m src serve --host 0.0.0.0 --port 9000 --output-dir .\received --verify-key C:\caminho\public.pem
+```
+
+```bash
+python -m src send --host 192.168.x.x --port 9000 --file "/caminho/imagem.png" --sign-key /caminho/private.pem
+```
+
+> **Tipos de ficheiro:** qualquer ficheiro em modo binário (imagens, PDF, ZIP, etc.).
+
+## Modo interativo (menu)
+
+```bash
+python -m src menu
+```
+
+Assistentes para enviar/receber, gestão de destinos guardados em:
+
+| Sistema   | Ficheiro de peers |
+|-----------|-------------------|
+| Unix      | `~/.two-headed-beast/peers.json` |
+| Windows   | `C:\Users\<utilizador>\.two-headed-beast\peers.json` |
+
+Sem subcomando, `python -m src` mostra o splash e um resumo de uso.
+
+## Linha de comando avançada
+
+### Servidor persistente vs uma sessão
+
+Por defeito o `serve` continua à escuta; cada ligação faz **novo** X25519. **Ctrl+C** para parar.
+
+```bash
+python -m src serve --host 0.0.0.0 --port 9000 --output-dir ./received
+```
+
+Uma só receção e terminar:
+
+```bash
+python -m src serve --host 127.0.0.1 --port 9000 --output-dir ./received --once
+```
 
 ### Compressão e ChaCha20-Poly1305
 
 ```bash
-python -m thb serve --port 9000 --output-dir ./recv --compress --cipher CHACHA20-POLY1305
-python -m thb send --port 9000 --file ./grande.bin --compress --cipher CHACHA20-POLY1305
+python -m src serve --port 9000 --output-dir ./recv --compress --cipher CHACHA20-POLY1305
+python -m src send --port 9000 --file ./grande.bin --compress --cipher CHACHA20-POLY1305
 ```
 
 ### Apenas autenticação (sem cifra, HMAC por bloco)
 
-Não utilize `--cipher` juntamente com `--no-encrypt`.
+Não passes `--cipher` manualmente em conjunto com **`--no-encrypt`** (o programa valida a combinação).
 
 ```bash
-python -m thb serve --port 9000 --output-dir ./recv --no-encrypt
-python -m thb send --port 9000 --file ./dados.bin --no-encrypt
+python -m src serve --port 9000 --output-dir ./recv --no-encrypt
+python -m src send --port 9000 --file ./dados.bin --no-encrypt
 ```
 
-### Assinatura digital (ECDSA ou RSA)
+### Assinatura digital
 
 ```bash
-# Gerar par de chaves ECDSA P-256 (exemplo com OpenSSL)
 openssl ecparam -name prime256v1 -genkey -noout -out private.pem
 openssl ec -in private.pem -pubout -out public.pem
 
-python -m thb serve --port 9000 --output-dir ./recv --verify-key public.pem
-python -m thb send --port 9000 --file ./relatorio.pdf --sign-key private.pem
+python -m src serve --port 9000 --output-dir ./recv --verify-key public.pem
+python -m src send --port 9000 --file ./relatorio.pdf --sign-key private.pem
 ```
 
-O campo `sign_algo` no cabeçalho é **inferido** da chave privada (`ECDSA-P256`, `ECDSA-P384`, `RSA-PSS`). A verificação falha se a chave pública (ou certificado X.509) não for compatível com esse algoritmo.
-
-### Ficheiro de teste grande (> 12 MiB após compressão)
+### Ficheiro grande para testar blocos
 
 ```bash
 dd if=/dev/urandom of=testfile.bin bs=1M count=20
-python -m thb serve --port 9000 --output-dir ./recv --compress
-python -m thb send --port 9000 --file ./testfile.bin --compress
+python -m src serve --port 9000 --output-dir ./recv --compress
+python -m src send --port 9000 --file ./testfile.bin --compress
 ```
 
-## Diagrama do protocolo (sequência)
+### Saída silenciosa
+
+`--quiet` / `-q` omite a linha de créditos no arranque de `serve` / `send`.
+
+## O protocolo em camadas
+
+### Visão geral (três fases)
+
+```mermaid
+flowchart LR
+  tcp[Ligacao_TCP]
+  kex[Acordo_X25519_e_HKDF]
+  dados[Cabecalho_e_blocos]
+  status[STATUS_final]
+  tcp --> kex --> dados --> status
+```
+
+### Fase 2 — troca de chaves públicas (ordem real do código)
+
+No **`serve`** (receptor): primeiro **recebe** `HANDSHAKE_PUBKEY` (32 bytes), depois **envia** a sua chave pública. No **`send`** (emissor): primeiro **envia**, depois **recebe**. Segue-se derivação **HKDF** → `k_enc` (ou omitida se `--no-encrypt`) e `k_mac` (32 bytes), e impressão do **[KEY FINGERPRINT]** para verificação TOFU.
+
+**Timeouts (socket):** ~**30 s** durante o handshake; após sucesso, ~**300 s** durante a transferência (configurado em `src/cli.py` nos dois lados).
 
 ```mermaid
 sequenceDiagram
-  participant Receptor as serve
-  participant Emissor as send
-  Emissor->>Receptor: TCP connect
-  Note over Receptor,Emissor: Timeout 30s durante KEX
-  Receptor->>Emissor: HANDSHAKE_PUBKEY
-  Emissor->>Receptor: HANDSHAKE_PUBKEY
-  Note over Receptor,Emissor: HKDF k_enc k_mac KEY FINGERPRINT
-  Note over Receptor,Emissor: Timeout 300s na transferência
-  Emissor->>Receptor: TRANSFER_HEADER_AEAD_or_HMAC
-  loop num_blocks
-    Emissor->>Receptor: BLOCK_DATA
-  end
-  opt assinatura
-    Emissor->>Receptor: SIGNATURE
-  end
-  Receptor->>Emissor: STATUS_OK ou STATUS_ERROR UTF-8
+  participant send as send_emissor
+  participant serve as serve_receptor
+  send->>serve: TCP connect
+  send->>serve: HANDSHAKE_PUBKEY
+  serve->>send: HANDSHAKE_PUBKEY
+  Note over send,serve: HKDF e fingerprint em cada lado
 ```
 
-## Cifras e hashes suportados
+### Fase 3 — dados e fim da sessão
+
+Passos lógicos (espelha `src/transfer.py`):
+
+1. **TRANSFER_HEADER** — metadados JSON (nome, tamanhos, blocos, algoritmos) protegidos com **AEAD** (nonce fixo para o header) ou **HMAC** se não houver cifra.
+2. **BLOCK_DATA** — repetido **N** vezes; cada bloco é **cifrado com AEAD** ou **autenticado com HMAC** (contador + dados).
+3. Opcionalmente **SIGNATURE** sobre o conteúdo original.
+4. **STATUS_OK** ou **STATUS_ERROR** (UTF-8 no erro).
+
+```mermaid
+sequenceDiagram
+  participant send as send
+  participant serve as serve
+  send->>serve: TRANSFER_HEADER
+  loop N_blocos
+    send->>serve: BLOCK_DATA
+  end
+  opt ficheiro_assinado
+    send->>serve: SIGNATURE
+  end
+  serve->>send: STATUS_OK_ou_ERROR
+```
+
+### Tipos de mensagem (`src/protocol.py`)
+
+| Byte | Constante       | Função resumida |
+|------|-----------------|-----------------|
+| `0x01` | `HANDSHAKE_PUBKEY` | Chave pública X25519 raw (32 B) |
+| `0x02` | `TRANSFER_HEADER` | Cabeçalho JSON cifrado ou com MAC |
+| `0x03` | `BLOCK_DATA`      | Bloco de payload |
+| `0x04` | `SIGNATURE`       | Assinatura digital (opcional) |
+| `0x10` | `STATUS_OK`       | Sucesso |
+| `0x11` | `STATUS_ERROR`    | Erro (mensagem UTF-8) |
+
+## Cifras e hashes
 
 | Cifra (AEAD)      | Tamanho da chave |
 |-------------------|------------------|
@@ -127,37 +311,61 @@ sequenceDiagram
 
 **Hashes** (HKDF, HMAC, assinatura): `SHA256`, `SHA384`, `SHA512`.
 
-## Vetores de ataque e mitigações (para apresentação)
+## Ficheiros grandes e partição em blocos
+
+- Se o tamanho do payload **após compressão opcional** (`zlib`) for **superior a 12 MiB**, os dados são partidos em blocos de **4 MiB**; cada bloco é tratado como mensagem **BLOCK_DATA** com integridade própria (AEAD ou HMAC).
+- Se o payload comprimido for **≤ 12 MiB**, há um único bloco com o tamanho total.
+
+> **Nota para o enunciado / docente:** o limiar de **12 MiB** aplica-se ao **tamanho usado para envio** (dados já comprimidos se `--compress` estiver ativo), não necessariamente ao tamanho do ficheiro em disco antes da compressão. Para alterar esse critério para “só tamanho original”, seria preciso mudar `src/transfer.py`.
+
+## KEX, OpenSSL e enunciado académico
+
+- O programa implementa **ECDH** com **Curve25519** (`X25519`) e deriva chaves com **HKDF** (`src/kex.py`). Isto cumpre o espírito de “acordo Diffie–Hellman / chave pública” em contexto moderno.
+- **OpenSSL:** o projeto usa **cryptography** (com backend OpenSSL comum em macOS/Linux/Windows). O **executável** `openssl` pode ser usado para **gerar par de chaves** de assinatura (exemplos acima); o **handshake** deste programa não chama `openssl` como subprocesso.
+- Se o docente exigir **DH clássico** (grupo finito) ou **obrigatoriedade** de `openssl` no KEX, isso seria uma extensão em relação ao código actual.
+
+## Vetores de ataque e mitigações
 
 | Ameaça | Discussão |
 |--------|-----------|
-| **MITM no ECDH** | Sem autenticação das chaves públicas efémeras, um atacante pode negociar segredos diferentes com cada extremo. **Mitigação parcial:** comparar o **[KEY FINGERPRINT]** (TOFU). |
-| **Alteração do cabeçalho** | O JSON de metadados é o primeiro conteúdo protegido com **AEAD (nonce 0)** ou **HMAC** após o KEX. |
-| **Reutilização de nonce em GCM** | **Nonces determinísticos:** 12 bytes big-endian, **0** para o cabeçalho e **1…N** para cada bloco de dados. |
-| **Truncagem** | O receptor verifica **num_blocks** e **original_size** após descompressão. |
-| **Downgrade de algoritmo** | Os algoritmos são escolhidos localmente; o cabeçalho autenticado regista o que o emissor usou; parâmetros **têm** de ser iguais nos dois lados para o KEX bater certo. |
+| **MITM no ECDH** | Chaves efémeras sem PKI: atacante pode fazer KEX diferentes com cada lado. **Mitigação parcial:** comparar **[KEY FINGERPRINT]** (TOFU). |
+| **Alteração do cabeçalho** | JSON protegido com **AEAD** (nonce dedicado) ou **HMAC** após o KEX. |
+| **Nonce em GCM** | Nonces explícitos: zero dedicado ao header; **1…N** por bloco de dados. |
+| **Truncagem** | Verificação de `num_blocks` e `original_size` após descompressão. |
+| **Downgrade** | Parâmetros fixos por CLI; cabeçalho autenticado descreve o que o emissor usou; **os dois lados têm de coincidir** ou a verificação falha. |
 
-## Limitações (prototipagem)
+## Limitações
 
-- O socket de escuta usa `listen(1)`; o servidor pode atender **várias sessões em sequência** (cada uma termina e volta a `accept`), exceto com `--once`.
-- **Salt fixo** na HKDF (`thb-v1-salt`); não é negociado.
-- **Forward secrecy** apenas *entre sessões* no sentido de novo X25519 por ligação; o desenho global não é estilo “Signal”.
+- `listen(1)` no servidor; várias sessões **em sequência** após cada `accept`, exceto com `--once`.
+- **Salt fixo** no HKDF (`thb-v1-salt`).
+- **Forward secrecy** por sessão (novo X25519 por ligação), não protocolo estilo Signal.
 - Compressão apenas **zlib**.
-- **Timeouts:** 30 s durante o KEX e 300 s após, em **ambos** os lados (`socket.settimeout`).
-- Estados de erro remoto são enviados como **UTF-8** em `STATUS_ERROR` (sem JSON).
+- Erros remotos em `STATUS_ERROR` como texto UTF-8 (sem JSON estruturado).
 
-## Estrutura do pacote
+## Resolução de problemas
 
-- `thb/cli.py` — argparse, `serve` / `send` / `menu`, `--quiet`, `--once` no servidor
-- `thb/interactive.py` — menus e construção de argumentos para reutilizar a lógica do CLI
-- `thb/branding.py` — splash UBI, cabeçalho compacto, cores ANSI
-- `thb/peers.py` — `~/.thb/peers.json` (alias, host, porta)
-- `thb/protocol.py` — framing 4 bytes + tipo + payload
-- `thb/kex.py` — X25519, HKDF, fingerprint
-- `thb/transfer.py` — compressão, partição >12 MiB (blocos de 4 MiB), envio/receção
-- `thb/signature.py` — assinatura e verificação
-- `thb/crypto_config.py` — listas fechadas e validação
+| Problema | O que verificar |
+|----------|-----------------|
+| Timeout ou «Connection refused» | Receptor com `serve` a correr; `--host 0.0.0.0` na LAN; firewall com a porta correta; IPv4 certo. |
+| «Failed to decrypt/verify transfer header» / mismatch | **Mesmos** `--cipher`, `--hash`, `--compress`, `--no-encrypt` nos dois processos. |
+| IPv4 errado | No Windows: `ipconfig`; no Mac/Linux: definições de rede ou `ifconfig`/`ip`. |
+| Porta ocupada | Escolher outra `--port` em **ambos** e abrir essa porta no firewall. |
+| Conteúdo corrompido ou HMAC inválido | Algoritmos ou ficheiro errado; verificar compressão e cifra iguais nas duas pontas. |
 
-## Licença e contexto
+## Estrutura do pacote `src/`
 
-Projeto académico — Cibersegurança (UBI). Ver enunciado do trabalho TWO-HEADED-BEAST no material da disciplina.
+| Módulo | Conteúdo principal |
+|--------|---------------------|
+| `cli.py` | `argparse`, `serve` / `send` / `menu`, `--quiet`, `--once` |
+| `interactive.py` | Menus e reutilização da validação do CLI |
+| `branding.py` | Splash, cabeçalho, cores ANSI |
+| `peers.py` | `~/.two-headed-beast/peers.json` |
+| `protocol.py` | Framing: 4 bytes comprimento + tipo + payload |
+| `kex.py` | X25519, HKDF, fingerprint |
+| `transfer.py` | Compressão, blocos >12 MiB, envio/receção |
+| `signature.py` | Assinatura e verificação |
+| `crypto_config.py` | Listas fechadas e validação |
+
+## Contexto académico
+
+Projeto académico — disciplina de **Cibersegurança** (UBI). Ver o enunciado **TWO-HEADED-BEAST** no material da disciplina.

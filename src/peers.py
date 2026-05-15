@@ -1,11 +1,11 @@
-"""Persistência de destinos (alias, host, porta) em ~/.thb/peers.json."""
+"""Persistência de destinos (alias, host, porta) em ~/.two-headed-beast/peers.json."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-PEERS_DIR = Path.home() / ".thb"
+PEERS_DIR = Path.home() / ".two-headed-beast"
 PEERS_FILE = PEERS_DIR / "peers.json"
 
 

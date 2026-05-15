@@ -7,10 +7,10 @@ import os
 import socket
 import sys
 
-from thb.branding import show_credits, show_splash
-from thb.crypto_config import CIPHERS, HASHES, validate_config
-from thb.kex import perform_kex
-from thb.transfer import receive_file, send_file
+from src.branding import show_credits, show_splash
+from src.crypto_config import CIPHERS, HASHES, validate_config
+from src.kex import perform_kex
+from src.transfer import receive_file, send_file
 
 
 def _norm_cipher(value: str) -> str:
@@ -33,26 +33,26 @@ def _norm_hash(value: str) -> str:
 
 EPILOG = """
 Modo interativo (menus guiados, destinos guardados):
-  python -m thb menu
+  python -m src menu
 
 EXEMPLOS (dois terminais, mesmos parâmetros criptográficos em ambos):
 
   Terminal 1 (receptor):
-    python -m thb serve --host 127.0.0.1 --port 9000 --output-dir ./received
+    python -m src serve --host 127.0.0.1 --port 9000 --output-dir ./received
 
   Terminal 2 (emissor):
-    python -m thb send --host 127.0.0.1 --port 9000 --file ./documento.pdf
+    python -m src send --host 127.0.0.1 --port 9000 --file ./documento.pdf
 
   Uma só receção e terminar (comportamento antigo):
-    python -m thb serve --host 0.0.0.0 --port 9000 --once --output-dir ./received
+    python -m src serve --host 0.0.0.0 --port 9000 --once --output-dir ./received
 
   Com compressão e ChaCha20-Poly1305:
-    python -m thb serve --port 9000 --compress --cipher CHACHA20-POLY1305 --output-dir ./recv
-    python -m thb send --port 9000 --file ./grande.bin --compress --cipher CHACHA20-POLY1305
+    python -m src serve --port 9000 --compress --cipher CHACHA20-POLY1305 --output-dir ./recv
+    python -m src send --port 9000 --file ./grande.bin --compress --cipher CHACHA20-POLY1305
 
   Sem cifra (apenas HMAC por bloco); não use --cipher:
-    python -m thb serve --port 9000 --no-encrypt --output-dir ./recv
-    python -m thb send --port 9000 --file ./dados.bin --no-encrypt
+    python -m src serve --port 9000 --no-encrypt --output-dir ./recv
+    python -m src send --port 9000 --file ./dados.bin --no-encrypt
 
 Cifras suportadas: """ + ", ".join(
     CIPHERS
@@ -72,6 +72,14 @@ LIMITAÇÕES CONHECIDAS:
   O acordo de chaves X25519 não autentica o par: um atacante na rede (MITM) pode negociar
   chaves distintas com cada lado. Use o fingerprint [KEY FINGERPRINT] impresso após o KEX
   como verificação manual (TOFU) quando o canal não for totalmente confiável.
+
+PROTOCOLO DE DADOS (resumo — ver README.md):
+  Ordem no emissor: leitura do ficheiro → compressão zlib opcional (--compress) → partição
+  em blocos de 4 MiB quando o payload (já comprimido) é maior que 12 MiB → por bloco: cifra
+  AEAD ou HMAC com a chave de sessão; cabeçalho JSON protegido da mesma forma.
+  Com --no-encrypt: não há cifra; cabeçalho e cada bloco levam MAC (HMAC) derivado do mesmo
+  segredo X25519 via HKDF (k_mac). Os dois lados devem usar os mesmos --cipher/--hash/
+  --compress/--no-encrypt.
 """
 
 
@@ -84,7 +92,7 @@ def _user_specified_cipher(argv: list[str]) -> bool:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m thb",
+        prog="python -m src",
         description=(
             "TWO-HEADED-BEAST: transmissão segura de ficheiros entre dois programas via TCP. "
             "Um processo serve (escuta); outro envia após estabelecer chave de sessão (X25519 + HKDF)."
@@ -97,7 +105,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "menu",
         help="Modo interativo com menus (recomendado para quem evita flags longas).",
-        description="Menus guiados para enviar/receber e gerir destinos em ~/.thb/peers.json.",
+        description="Menus guiados para enviar/receber e gerir destinos em ~/.two-headed-beast/peers.json.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -306,13 +314,13 @@ def main() -> None:
     if args.command is None:
         show_splash()
         print()
-        print("  Uso: python -m thb {serve,send,menu} [opções]")
-        print("  Ajuda: python -m thb --help")
-        print("  Interativo: python -m thb menu")
+        print("  Uso: python -m src {serve,send,menu} [opções]")
+        print("  Ajuda: python -m src --help")
+        print("  Interativo: python -m src menu")
         return
 
     if args.command == "menu":
-        from thb.interactive import main_menu
+        from src.interactive import main_menu
 
         main_menu()
         return
