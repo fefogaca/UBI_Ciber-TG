@@ -31,7 +31,7 @@ def _tip(*lines: str) -> None:
 
 
 def _prompt_yn(prompt: str, default: bool) -> bool:
-    """Lê sim/não; Enter aceita o *default*."""
+    """Lê sim/não; a tecla Enter aceita o *default*."""
     hint = "[S/n]" if default else "[s/N]"
     raw = input(f"{Colors.PROMPT}>{Colors.RESET} {prompt} {hint}: ").strip().lower()
     if not raw:
@@ -41,7 +41,7 @@ def _prompt_yn(prompt: str, default: bool) -> bool:
 
 def _prompt_line(prompt: str, default: str = "", *, parens: str | None = None) -> str:
     """
-    Lê uma linha; Enter aceita *default*.
+    Lê uma linha; a tecla Enter aceita *default*.
 
     :param parens: dica entre parêntesis (ex. valor típico). Se for igual ao *default*,
         não se repete também em ``[default]`` — mostra-se só uma vez.
@@ -75,7 +75,7 @@ def _draw_main_menu() -> None:
 
 def _about() -> None:
     show_splash()
-    input(f"\n{Colors.DIM}Enter para voltar...{Colors.RESET}")
+    input(f"\n{Colors.DIM}Prima Enter para voltar...{Colors.RESET}")
 
 
 def _manage_peers() -> None:
@@ -110,17 +110,17 @@ def _manage_peers() -> None:
                 port = int(port_s)
             except ValueError:
                 print(f"{Colors.ERR}Porta inválida.{Colors.RESET}")
-                input(f"{Colors.DIM}Enter...{Colors.RESET}")
+                input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
                 continue
             if alias and host:
                 peers_mod.add_peer(alias, host, port)
                 print(f"{Colors.OK}Guardado.{Colors.RESET}")
             else:
                 print(f"{Colors.ERR}Alias e host obrigatórios.{Colors.RESET}")
-            input(f"{Colors.DIM}Enter...{Colors.RESET}")
+            input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
         elif choice == "R":
             if not plist:
-                input(f"{Colors.DIM}Enter...{Colors.RESET}")
+                input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
                 continue
             idx_s = input(f"{Colors.PROMPT}>{Colors.RESET} Número a remover: ").strip()
             try:
@@ -135,7 +135,7 @@ def _manage_peers() -> None:
                     print(f"{Colors.ERR}Número inválido.{Colors.RESET}")
             except ValueError:
                 print(f"{Colors.ERR}Número inválido.{Colors.RESET}")
-            input(f"{Colors.DIM}Enter...{Colors.RESET}")
+            input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
 
 
 def _choose_cipher_interactive() -> str:
@@ -193,7 +193,7 @@ def _flow_send() -> None:
             n = int(raw)
         except ValueError:
             print(f"{Colors.ERR}Opção inválida.{Colors.RESET}")
-            input(f"{Colors.DIM}Enter...{Colors.RESET}")
+            input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
             return
         if 1 <= n <= len(plist):
             host = plist[n - 1]["host"]
@@ -213,12 +213,12 @@ def _flow_send() -> None:
             picked_new = True
         else:
             print(f"{Colors.ERR}Opção inválida.{Colors.RESET}")
-            input(f"{Colors.DIM}Enter...{Colors.RESET}")
+            input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
             return
 
     if not host:
         print(f"{Colors.ERR}Host obrigatório.{Colors.RESET}")
-        input(f"{Colors.DIM}Enter...{Colors.RESET}")
+        input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
         return
 
     clear_screen()
@@ -255,7 +255,7 @@ def _flow_send() -> None:
     hash_name = _choose_hash_interactive()
     _tip("Caminho PEM opcional. Aspas se tiver espaços, ex.: \"/Users/nome/chave.pem\"")
     sign_path = input(
-        f"{Colors.PROMPT}>{Colors.RESET} Chave privada para assinar (Enter omitir): "
+        f"{Colors.PROMPT}>{Colors.RESET} Chave privada para assinar (Enter para omitir): "
     ).strip()
     sign_key = _strip_wrapping_quotes(sign_path) if sign_path else None
 
@@ -277,7 +277,7 @@ def _flow_send() -> None:
         _validate_parsed(args)
     except SystemExit as e:
         print(f"{Colors.ERR}{e}{Colors.RESET}")
-        input(f"{Colors.DIM}Enter...{Colors.RESET}")
+        input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
         return
 
     clear_screen()
@@ -289,7 +289,7 @@ def _flow_send() -> None:
         fp = run_client(args)
     except Exception as e:
         print(f"{Colors.ERR}[ERRO] {e}{Colors.RESET}")
-        input(f"{Colors.DIM}Enter para voltar ao menu...{Colors.RESET}")
+        input(f"{Colors.DIM}Prima Enter para voltar ao menu...{Colors.RESET}")
         return
 
     if picked_new and _prompt_yn("Guardar este destino?", False):
@@ -297,14 +297,14 @@ def _flow_send() -> None:
         if alias:
             peers_mod.add_peer(alias, host, port)
             print(f"{Colors.OK}Destino guardado.{Colors.RESET}")
-        input(f"{Colors.DIM}Enter...{Colors.RESET}")
+        input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
 
     if fp and _prompt_yn(
-        "Guardar o [KEY FINGERPRINT] deste par em peers.json (TOFU) para alertas futuros?",
+        "Guardar a impressão digital da chave ([IMPRESSÃO DIGITAL DA CHAVE]) deste par em peers.json (TOFU) para alertas futuros?",
         False,
     ):
         peers_mod.save_fingerprint(host, port, fp)
-        print(f"{Colors.OK}Fingerprint guardado para {host}:{port}.{Colors.RESET}")
+        print(f"{Colors.OK}Impressão digital guardada para {host}:{port}.{Colors.RESET}")
 
 
 def _flow_receive() -> None:
@@ -315,7 +315,7 @@ def _flow_receive() -> None:
     show_header()
     print(f"\n{Colors.BOLD}-- Servidor --{Colors.RESET}\n")
     _tip(
-        "Início rápido: na pergunta abaixo, Enter = escuta em 0.0.0.0 porta 9000",
+        "Início rápido: na pergunta abaixo, Enter = escuta em 0.0.0.0, porta 9000",
         "(rede local + neste PC). Só responda «sim» se precisar de outro IP ou porta.",
     )
     manual_net = _prompt_yn("Definir IP ou porta manualmente?", False)
@@ -352,7 +352,7 @@ def _flow_receive() -> None:
     hash_name = _choose_hash_interactive()
     _tip("PEM de chave pública ou certificado X.509 (opcional). Use aspas se o caminho tiver espaços.")
     verify_path = input(
-        f"{Colors.PROMPT}>{Colors.RESET} Chave/Cert para verificar assinatura (Enter omitir): "
+        f"{Colors.PROMPT}>{Colors.RESET} Chave ou certificado para verificar assinatura (Enter para omitir): "
     ).strip()
     verify_key = _strip_wrapping_quotes(verify_path) if verify_path else None
 
@@ -375,7 +375,7 @@ def _flow_receive() -> None:
         _validate_parsed(args)
     except SystemExit as e:
         print(f"{Colors.ERR}{e}{Colors.RESET}")
-        input(f"{Colors.DIM}Enter...{Colors.RESET}")
+        input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
         return
 
     clear_screen()
@@ -393,17 +393,17 @@ def _flow_receive() -> None:
         th, tp = kex.LAST_SESSION_TOFU_KEY
         if not args.once:
             _tip(
-                "Servidor em modo contínuo: o fingerprint abaixo é só o da última sessão "
+                "Servidor em modo contínuo: a impressão digital abaixo corresponde apenas à última sessão "
                 "antes de parar (Ctrl+C).",
             )
         if _prompt_yn(
-            "Guardar o último [KEY FINGERPRINT] do par em peers.json (TOFU)?",
+            "Guardar a última [IMPRESSÃO DIGITAL DA CHAVE] do par em peers.json (TOFU)?",
             False,
         ):
             peers_mod.save_fingerprint(th, tp, kex.LAST_SESSION_PEER_FINGERPRINT)
-            print(f"{Colors.OK}Fingerprint guardado para {th}:{tp}.{Colors.RESET}")
+            print(f"{Colors.OK}Impressão digital guardada para {th}:{tp}.{Colors.RESET}")
 
-    input(f"{Colors.DIM}Enter para voltar ao menu...{Colors.RESET}")
+    input(f"{Colors.DIM}Prima Enter para voltar ao menu...{Colors.RESET}")
 
 
 def main_menu() -> None:
@@ -434,7 +434,7 @@ def main_menu() -> None:
                 return
             else:
                 print(f"{Colors.ERR}Opção inválida.{Colors.RESET}")
-                input(f"{Colors.DIM}Enter...{Colors.RESET}")
+                input(f"{Colors.DIM}Prima Enter...{Colors.RESET}")
     except KeyboardInterrupt:
         print(f"\n{Colors.DIM}Saindo...{Colors.RESET}")
         sys.exit(0)

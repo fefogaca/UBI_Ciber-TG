@@ -56,10 +56,12 @@ python -m src menu
 
 Assistente passo a passo para enviar e receber, com gestão de destinos guardados em `~/.two-headed-beast/peers.json` (Windows: `C:\Users\<user>\.two-headed-beast\peers.json`).
 
+Material local opcional: algumas equipas mantêm uma pasta **`help/`** (guia de testes de apresentação, script para gerar PDF/amostras) — essa pasta costuma estar no `.gitignore` e **não vem** no `git clone`; gerem-na localmente ou partilhem-na fora do GitHub. O comando típico na raiz do repositório é `python help/scripts/gerar_material_demo.py` (caminhos de exemplo no guia dentro de `help/docs/`).
+
 ## Referência de comandos
 
 > [!IMPORTANT]
-> Ambos os lados devem usar os mesmos `--cipher`, `--hash`, `--compress` e `--no-encrypt`. Não existe negociação automática de parâmetros — se divergirem, o cabeçalho de transferência não será verificado correctamente.
+> Ambos os lados devem usar os mesmos `--cipher`, `--hash`, `--compress` e `--no-encrypt`. Não existe negociação automática de parâmetros — se divergirem, o cabeçalho de transferência não será verificado correctamente. Na receção, a CLI recusa um envio se o emissor e o receptor não acordarem explicitamente em `--compress` (embora o cabeçalho autenticado já indique se os dados foram comprimidos).
 
 ### Cifras e hashes
 
@@ -120,20 +122,20 @@ O protocolo corre em três fases: **ligação TCP → acordo de chaves X25519 (K
 O ataque demonstrado é o **MITM no acordo ECDH não autenticado**: as chaves X25519 são efémeras mas sem vinculação de identidade, pelo que um intermediário pode negociar sessões separadas com cada lado sem que a transferência falhe.
 
 > [!WARNING]
-> Após o KEX, cada terminal imprime um **[KEY FINGERPRINT]**. Se os valores nos dois lados divergirem, existe intermediário. O modo interativo permite persistir e comparar fingerprints entre sessões via `peers.json`.
+> Após o KEX, cada terminal imprime uma linha **[IMPRESSÃO DIGITAL DA CHAVE]**. Se os valores nos dois lados divergirem, existe intermediário. O modo interativo permite persistir e comparar impressões digitais entre sessões via `peers.json`.
 
 ## Estrutura do código
 
 | Módulo | Responsabilidade |
 |---|---|
 | `cli.py` | Parsing de argumentos, subcomandos `serve` / `send` / `menu` |
-| `kex.py` | Acordo X25519, derivação HKDF, fingerprint TOFU |
+| `kex.py` | Acordo X25519, derivação HKDF, impressão digital TOFU |
 | `transfer.py` | Pipeline: compressão → blocos → cifra/MAC → envio/receção |
 | `protocol.py` | Framing TCP (4 bytes comprimento + 1 byte tipo + payload) |
 | `signature.py` | Assinatura ECDSA/RSA-PSS e verificação com chave pública ou X.509 |
 | `crypto_config.py` | Catálogo de cifras e hashes; mapeamentos centralizados |
 | `interactive.py` | Menus guiados, gestão de peers |
-| `peers.py` | Persistência de destinos e fingerprints TOFU |
+| `peers.py` | Persistência de destinos e impressões digitais TOFU |
 | `branding.py` | Identidade visual no terminal (ANSI) |
 
 ## Autores

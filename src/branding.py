@@ -1,4 +1,4 @@
-"""Identidade visual UBI e utilitarios de terminal (ANSI, limpar ecra).
+"""Identidade visual UBI e utilitários de terminal (ANSI, limpar ecrã).
 
 Interface só com texto e linhas ASCII. Paleta inspirada em CLIs modernas (violeta/azul,
 sem verde de terminal clássico): foco em legibilidade e tom amigável.

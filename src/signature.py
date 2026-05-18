@@ -81,18 +81,20 @@ def _sign_algo_matches_key(sign_algo: str, public_key) -> None:
     if sign_algo in ("ECDSA-P256", "ECDSA-P384"):
         if not isinstance(public_key, ec.EllipticCurvePublicKey):
             raise ValueError(
-                f"Signature algorithm mismatch: header says {sign_algo} but verify key is not ECDSA."
+                f"Incompatibilidade de algoritmo de assinatura: o cabeçalho indica {sign_algo}, "
+                "mas a chave de verificação não é ECDSA."
             )
         want = "secp256r1" if sign_algo == "ECDSA-P256" else "secp384r1"
         if public_key.curve.name != want:
             raise ValueError(
-                f"Signature algorithm mismatch: header says {sign_algo} but key curve is "
-                f"{public_key.curve.name}."
+                f"Incompatibilidade de algoritmo de assinatura: o cabeçalho indica {sign_algo}, "
+                f"mas a curva da chave é {public_key.curve.name}."
             )
     elif sign_algo == "RSA-PSS":
         if not isinstance(public_key, rsa.RSAPublicKey):
             raise ValueError(
-                "Signature algorithm mismatch: header says RSA-PSS but verify key is not RSA."
+                "Incompatibilidade de algoritmo de assinatura: o cabeçalho indica RSA-PSS, "
+                "mas a chave de verificação não é RSA."
             )
     else:
         raise ValueError(f"sign_algo desconhecido no header: {sign_algo!r}")

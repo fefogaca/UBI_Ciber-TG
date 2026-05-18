@@ -28,10 +28,10 @@ def print_fingerprint(peer_public_bytes: bytes) -> str:
     Imprime fingerprint TOFU da chave pública do par (SHA256, 8 primeiros bytes).
 
     :param peer_public_bytes: Chave pública X25519 em formato raw (32 bytes).
-    :return: mesma string mostrada após [KEY FINGERPRINT].
+    :return: mesma string mostrada após [IMPRESSÃO DIGITAL DA CHAVE].
     """
     grouped = peer_pubkey_fingerprint(peer_public_bytes)
-    print(f"[KEY FINGERPRINT] {grouped}")
+    print(f"[IMPRESSÃO DIGITAL DA CHAVE] {grouped}")
     return grouped
 
 
@@ -68,14 +68,14 @@ def perform_kex(
     if is_server:
         msg_type, payload = recv_msg(sock)
         if msg_type != HANDSHAKE_PUBKEY:
-            raise ValueError(f"Esperado HANDSHAKE_PUBKEY, recebido 0x{msg_type:02x}")
+            raise ValueError(f"Esperada chave pública do handshake, recebido tipo 0x{msg_type:02x}")
         peer_raw = payload
         send_msg(sock, HANDSHAKE_PUBKEY, public_bytes)
     else:
         send_msg(sock, HANDSHAKE_PUBKEY, public_bytes)
         msg_type, payload = recv_msg(sock)
         if msg_type != HANDSHAKE_PUBKEY:
-            raise ValueError(f"Esperado HANDSHAKE_PUBKEY, recebido 0x{msg_type:02x}")
+            raise ValueError(f"Esperada chave pública do handshake, recebido tipo 0x{msg_type:02x}")
         peer_raw = payload
 
     fp_str = print_fingerprint(peer_raw)
@@ -85,8 +85,8 @@ def perform_kex(
         stored = peers_mod.get_fingerprint(tofu_host, int(tofu_port))
         if stored and stored != fp_str:
             print(
-                "[WARN] Fingerprint changed! "
-                "A stored TOFU fingerprint for this host/port does not match this session."
+                "[AVISO] A impressão digital TOFU guardada para este anfitrião/porta "
+                "não coincide com esta sessão."
             )
     else:
         LAST_SESSION_TOFU_KEY = None

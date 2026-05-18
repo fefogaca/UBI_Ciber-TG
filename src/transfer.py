@@ -1,5 +1,5 @@
 """
-Pipeline de transferência: compressão, partição, autenticação por bloco, header protegido.
+Pipeline de transferência: compressão, partição, autenticação por bloco, cabeçalho protegido.
 """
 
 from __future__ import annotations
@@ -66,7 +66,8 @@ def _unprotect_header(payload: bytes, encrypted: bool, k_enc: bytes | None, k_ma
             return _aead_decrypt(k_enc, HEADER_NONCE, payload, cipher)
         except Exception as exc:
             raise ValueError(
-                "Failed to decrypt/verify transfer header - crypto parameters likely mismatch between sender and receiver."
+                "Falha ao decifrar ou verificar o cabeçalho da transferência — parâmetros "
+                "criptográficos provavelmente em desacordo entre emissor e receptor."
             ) from exc
     mac_len = hash_digest_size(hash_name)
     if len(payload) < mac_len:
@@ -75,7 +76,8 @@ def _unprotect_header(payload: bytes, encrypted: bool, k_enc: bytes | None, k_ma
     expected = _hmac(k_mac, b"\x00\x00\x00\x00" + body, hash_name)
     if not hmac_stdlib.compare_digest(mac, expected):
         raise ValueError(
-            "Failed to decrypt/verify transfer header - crypto parameters likely mismatch between sender and receiver."
+            "Falha ao decifrar ou verificar o cabeçalho da transferência — parâmetros "
+            "criptográficos provavelmente em desacordo entre emissor e receptor."
         )
     return body
 
@@ -147,28 +149,28 @@ def send_file(sock, filepath: str, k_enc: bytes | None, k_mac: bytes, args: Name
             mac = _hmac(k_mac, counter + chunk, args.hash)
             payload = chunk + mac
         send_msg(sock, BLOCK_DATA, payload)
-        print(f"[SEND] Block {i + 1}/{num_blocks}")
+        print(f"[ENVIO] Bloco {i + 1}/{num_blocks}")
 
     if args.sign_key:
         sig_bytes, _ = sig_mod.sign_data(args.sign_key, original_data, args.hash)
         try:
             send_msg(sock, SIGNATURE, sig_bytes)
         except (BrokenPipeError, ConnectionResetError) as exc:
-            print(f"[ERROR] Ligação fechada pelo receptor antes de concluir o envio: {exc}")
+            print(f"[ERRO] Ligação fechada pelo receptor antes de concluir o envio: {exc}")
             return
 
     try:
         msg_type, payload = recv_msg(sock)
     except (BrokenPipeError, ConnectionResetError, ConnectionError) as exc:
-        print(f"[ERROR] Ligação perdida ao aguardar estado final: {exc}")
+        print(f"[ERRO] Ligação perdida ao aguardar o estado final: {exc}")
         return
 
     if msg_type == STATUS_ERROR:
-        print(f"[REMOTE ERROR] {payload.decode('utf-8', errors='replace')}")
+        print(f"[ERRO REMOTO] {payload.decode('utf-8', errors='replace')}")
     elif msg_type == STATUS_OK:
-        print("[OK] File sent successfully")
+        print("[OK] Ficheiro enviado com sucesso")
     else:
-        print(f"[ERROR] Resposta inesperada do servidor: 0x{msg_type:02x}")
+        print(f"[ERRO] Resposta inesperada do servidor: 0x{msg_type:02x}")
 
 
 def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args: Namespace) -> None:
@@ -187,12 +189,12 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
     try:
         msg_type, protected = recv_msg(sock)
         if msg_type != TRANSFER_HEADER:
-            raise ValueError(f"Esperado TRANSFER_HEADER, recebido 0x{msg_type:02x}")
+            raise ValueError(f"Esperado cabeçalho de transferência, recebido tipo 0x{msg_type:02x}")
 
         try:
             header_json = _unprotect_header(protected, encrypted, k_enc, k_mac, cipher or "", args.hash)
         except ValueError as exc:
-            print(f"[ERROR] {exc}")
+            print(f"[ERRO] {exc}")
             _send_status(sock, False, str(exc))
             return
 
@@ -220,21 +222,35 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
             remote_c = (hdr_cipher or "").upper()
             if remote_c != local_c:
                 raise ValueError(
-                    f"Cipher mismatch: sender used {hdr_cipher!r}, receiver expects {cipher!r} "
-                    f"— use the same --cipher flag on both sides."
+                    f"Incompatibilidade de cifra: o emissor usou {hdr_cipher!r}, o receptor espera {cipher!r} "
+                    f"— use a mesma opção --cipher em ambos os lados."
                 )
 
         local_h = args.hash.upper()
         remote_h = str(header["hash"]).upper()
         if remote_h != local_h:
             raise ValueError(
-                f"Hash mismatch: sender used {header['hash']!r}, receiver expects {args.hash!r} "
-                f"— use the same --hash flag on both sides."
+                f"Incompatibilidade de hash: o emissor usou {header['hash']!r}, o receptor espera {args.hash!r} "
+                f"— use a mesma opção --hash em ambos os lados."
+            )
+
+        hdr_compressed = bool(header["compressed"])
+        receiver_compress = bool(args.compress)
+        if hdr_compressed != receiver_compress:
+            raise ValueError(
+                "Incompatibilidade de compressão: o emissor enviou "
+                + ("com compressão" if hdr_compressed else "sem compressão")
+                + ", o receptor espera "
+                + ("com compressão" if receiver_compress else "sem compressão")
+                + " — use a mesma opção --compress em ambos os lados."
             )
 
         if header["signed"] and not args.verify_key:
-            msg = "Transfer header indicates a signed file, but no --verify-key was provided. Aborting."
-            print(f"[ERROR] {msg}")
+            msg = (
+                "O cabeçalho indica um ficheiro assinado, mas não foi indicada --verify-key. "
+                "A abortar."
+            )
+            print(f"[ERRO] {msg}")
             _send_status(sock, False, msg)
             return
 
@@ -244,7 +260,7 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
         for i in range(nblocks):
             mtype, payload = recv_msg(sock)
             if mtype != BLOCK_DATA:
-                raise ValueError(f"Esperado BLOCK_DATA no bloco {i + 1}, recebido 0x{mtype:02x}")
+                raise ValueError(f"Esperado dados de bloco na posição {i + 1}, recebido tipo 0x{mtype:02x}")
             expected_nonce = i + 1
             if encrypted:
                 nonce_bytes = payload[:12]
@@ -269,7 +285,7 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
                     raise ValueError(f"Bloco {i + 1}: verificação HMAC falhou.")
                 pt = chunk
             blocks.append(pt)
-            print(f"[RECV] Block {i + 1}/{nblocks} - integrity OK")
+            print(f"[REC] Bloco {i + 1}/{nblocks} — integridade verificada")
 
         compressed_data = b"".join(blocks)
         if header["compressed"]:
@@ -288,8 +304,8 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
         if header["signed"]:
             stype, sig_payload = recv_msg(sock)
             if stype != SIGNATURE:
-                raise ValueError(f"Esperado SIGNATURE após blocos, recebido 0x{stype:02x}")
-            # verify_signature raises ValueError on failure — caught by outer except below.
+                raise ValueError(f"Esperada assinatura após os blocos, recebido tipo 0x{stype:02x}")
+            # verify_signature levanta ValueError em caso de falha — capturada pelo except exterior.
             sig_mod.verify_signature(
                 args.verify_key,
                 original_data,
@@ -305,12 +321,12 @@ def receive_file(sock, output_dir: str, k_enc: bytes | None, k_mac: bytes, args:
 
         _send_status(sock, True, "OK")
         print(
-            f'[OK] File "{header["filename"]}" ({header["original_size"]} bytes) received successfully'
+            f'[OK] Ficheiro «{header["filename"]}» ({header["original_size"]} bytes) recebido com sucesso'
         )
 
     except (ConnectionError, OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         msg = str(exc)
-        print(f"[ERROR] {msg}")
+        print(f"[ERRO] {msg}")
         try:
             _send_status(sock, False, msg)
         except OSError:

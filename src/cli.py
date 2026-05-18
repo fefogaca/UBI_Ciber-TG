@@ -63,14 +63,14 @@ Hashes (HKDF/HMAC/assinatura): """ + ", ".join(
 
 LIMITAÇÕES CONHECIDAS:
   O servidor e o cliente devem ser executados com os mesmos parâmetros (--cipher, --hash,
-  --compress, --no-encrypt). Caso contrário, o header de transferência não será decifrado
-  ou verificado corretamente.
+  --compress, --no-encrypt). Caso contrário, o cabeçalho de transferência não será decifrado
+  ou verificado correctamente.
 
   Por defeito o servidor aceita várias sessões seguidas (novo acordo X25519 por ligação).
   Use --once para terminar após um ficheiro.
 
   O acordo de chaves X25519 não autentica o par: um atacante na rede (MITM) pode negociar
-  chaves distintas com cada lado. Use o fingerprint [KEY FINGERPRINT] impresso após o KEX
+  chaves distintas com cada lado. Use a impressão digital [IMPRESSÃO DIGITAL DA CHAVE] impressa após o KEX
   como verificação manual (TOFU) quando o canal não for totalmente confiável.
 
 PROTOCOLO DE DADOS (resumo — ver README.md):
@@ -121,18 +121,22 @@ def _build_parser() -> argparse.ArgumentParser:
     send = sub.add_parser(
         "send",
         help="Modo emissor: liga ao servidor e envia um ficheiro.",
-        description="Conecta ao servidor, realiza o handshake de chaves e envia o ficheiro.",
+        description="Liga ao servidor, executa a troca de chaves e envia o ficheiro.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     for p in (serve, send):
-        p.add_argument("--host", default="127.0.0.1", help="Endereço a ligar/bind (default: %(default)s)")
-        p.add_argument("--port", type=int, default=9000, help="Porta TCP (default: %(default)s)")
+        p.add_argument(
+            "--host",
+            default="127.0.0.1",
+            help="Anfitrião TCP — em send, o destino; em serve, a interface de escuta (pré-definido: %(default)s).",
+        )
+        p.add_argument("--port", type=int, default=9000, help="Porta TCP (pré-definido: %(default)s).")
         p.add_argument(
             "--cipher",
             type=_norm_cipher,
             default=_norm_cipher("AES-256-GCM"),
-            help="Cifra AEAD (default: AES-256-GCM). Incompatível com --no-encrypt.",
+            help="Cifra AEAD (pré-definido: AES-256-GCM). Incompatível com --no-encrypt.",
         )
         p.add_argument(
             "--no-encrypt",
@@ -148,7 +152,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "--hash",
             type=_norm_hash,
             default=_norm_hash("SHA256"),
-            help="Hash para HKDF, HMAC e assinatura (default: SHA256)",
+            help="Função de hash para HKDF, HMAC e assinatura (pré-definido: %(default)s).",
         )
         p.add_argument(
             "--quiet",
@@ -160,11 +164,11 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--output-dir",
         default="./received",
-        help="Diretório onde gravar o ficheiro recebido (default: %(default)s)",
+        help="Directório onde gravar o ficheiro recebido (pré-definido: %(default)s).",
     )
     serve.add_argument(
         "--verify-key",
-        metavar="PATH",
+        metavar="CAMINHO",
         help="PEM da chave pública ou certificado X.509 para validar assinatura (se o envio foi assinado).",
     )
     serve.add_argument(
@@ -173,10 +177,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Terminar após uma receção (por defeito o servidor fica à escuta).",
     )
 
-    send.add_argument("--file", required=True, metavar="PATH", help="Ficheiro a enviar")
+    send.add_argument("--file", required=True, metavar="CAMINHO", help="Ficheiro a enviar")
     send.add_argument(
         "--sign-key",
-        metavar="PATH",
+        metavar="CAMINHO",
         help="PEM da chave privada para assinar o hash do ficheiro original (opcional).",
     )
 
@@ -223,9 +227,9 @@ def run_server(args: argparse.Namespace) -> None:
     if not getattr(args, "quiet", False):
         show_credits()
 
-    print(f"[INFO] Listening on {args.host}:{args.port}")
+    print(f"[Informação] À escuta em {args.host}:{args.port}")
     if not args.once:
-        print("[INFO] Servidor à escuta para várias transferências; Ctrl+C para parar.")
+        print("[Informação] Servidor à escuta para várias transferências; Ctrl+C para parar.")
 
     session = 0
     try:
@@ -235,7 +239,7 @@ def run_server(args: argparse.Namespace) -> None:
             except OSError:
                 break
             session += 1
-            print(f"\n[INFO] -- Sessão {session} -- ligação de {addr}")
+            print(f"\n[Informação] -- Sessão {session} -- ligação de {addr}")
             conn.settimeout(30)
             try:
                 k_enc, k_mac, _ = perform_kex(
@@ -249,7 +253,7 @@ def run_server(args: argparse.Namespace) -> None:
                 conn.settimeout(300)
                 receive_file(conn, args.output_dir, k_enc, k_mac, args)
             except Exception as e:
-                print(f"[ERROR] Sessão {session}: {e}")
+                print(f"[ERRO] Sessão {session}: {e}")
             finally:
                 try:
                     conn.close()
@@ -259,10 +263,10 @@ def run_server(args: argparse.Namespace) -> None:
             if args.once:
                 break
 
-            print("[INFO] À espera da próxima ligação...")
+            print("[Informação] À espera da próxima ligação...")
 
     except KeyboardInterrupt:
-        print(f"\n[INFO] Servidor parado após {session} sessão(ões).")
+        print(f"\n[Informação] Servidor parado após {session} sessão(ões).")
     finally:
         try:
             server_sock.close()
@@ -275,7 +279,7 @@ def run_client(args: argparse.Namespace) -> str | None:
     Liga ao servidor, realiza KEX e envia o ficheiro.
 
     :param args: argumentos parseados do subcomando ``send``.
-    :return: fingerprint TOFU do par ([KEY FINGERPRINT]) ou None se a ligação falhar antes do KEX.
+    :return: impressão digital TOFU do par ([IMPRESSÃO DIGITAL DA CHAVE]) ou None se a ligação falhar antes do KEX.
     """
     if not getattr(args, "quiet", False):
         show_credits()
@@ -284,7 +288,7 @@ def run_client(args: argparse.Namespace) -> str | None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(30)
     sock.connect((args.host, args.port))
-    print(f"[INFO] Connected to {args.host}:{args.port}")
+    print(f"[Informação] Ligado a {args.host}:{args.port}")
     fp: str | None = None
     try:
         k_enc, k_mac, fp = perform_kex(

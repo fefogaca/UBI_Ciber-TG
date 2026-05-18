@@ -17,14 +17,14 @@ def recv_exact(sock, n: int) -> bytes:
     :param sock: socket TCP conectado.
     :param n: número de bytes.
     :return: buffer com n bytes.
-    :raises ConnectionError: se a conexão fechar antes de n bytes.
+    :raises ConnectionError: se a ligação fechar antes de n bytes.
     """
     chunks: list[bytes] = []
     remaining = n
     while remaining > 0:
         chunk = sock.recv(remaining)
         if not chunk:
-            raise ConnectionError("Connection closed prematurely")
+            raise ConnectionError("Ligação fechada antes de concluir a leitura")
         chunks.append(chunk)
         remaining -= len(chunk)
     return b"".join(chunks)
@@ -49,12 +49,12 @@ def recv_msg(sock) -> tuple[int, bytes]:
 
     :param sock: socket.
     :return: (msg_type, payload).
-    :raises ConnectionError: se a conexão fechar antes do fim da mensagem.
+    :raises ConnectionError: se a ligação fechar antes do fim da mensagem.
     """
     length_bytes = recv_exact(sock, 4)
     length = int.from_bytes(length_bytes, "big")
     if length < 1:
-        raise ConnectionError("Invalid frame: empty frame")
+        raise ConnectionError("Trama inválida: trama vazia")
     frame = recv_exact(sock, length)
     msg_type = frame[0]
     payload = frame[1:]
