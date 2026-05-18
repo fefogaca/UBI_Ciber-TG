@@ -56,8 +56,6 @@ python -m src menu
 
 Assistente passo a passo para enviar e receber, com gestão de destinos guardados em `~/.two-headed-beast/peers.json` (Windows: `C:\Users\<user>\.two-headed-beast\peers.json`).
 
-Material local opcional: algumas equipas mantêm uma pasta **`help/`** (guia de testes de apresentação, script para gerar PDF/amostras) — essa pasta costuma estar no `.gitignore` e **não vem** no `git clone`; gerem-na localmente ou partilhem-na fora do GitHub. O comando típico na raiz do repositório é `python help/scripts/gerar_material_demo.py` (caminhos de exemplo no guia dentro de `help/docs/`).
-
 ## Referência de comandos
 
 > [!IMPORTANT]
