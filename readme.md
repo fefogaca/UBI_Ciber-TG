@@ -124,10 +124,12 @@ O ataque demonstrado é o **MITM no acordo ECDH não autenticado**: as chaves X2
 
 ### Prova de conceito do ataque
 
-O módulo [`ataque/mitm_proxy.py`](ataque/mitm_proxy.py) implementa um proxy MITM que se coloca entre emissor e receptor, troca as chaves públicas X25519 por chaves do atacante e tenta adulterar os blocos em trânsito. Serve para demonstrar, na defesa, que:
+O módulo [`ataque/mitm_proxy.py`](ataque/mitm_proxy.py) implementa um proxy MITM que se coloca entre emissor e receptor: intercepta as chaves públicas X25519, substitui-as pela sua própria e estabelece **duas sessões independentes** (uma com cada lado), tal como ilustra o diagrama acima. Como o acordo de chaves não é autenticado, o atacante deriva as chaves de sessão dos dois lados, **decifra** o conteúdo e pode **reencaminhar blocos adulterados** já recifrados com a chave do receptor.
 
-- Sem verificação da **[IMPRESSÃO DIGITAL DA CHAVE]**, o atacante consegue intercetar a sessão.
-- A **integridade AEAD/HMAC** impede a adulteração silenciosa: ao reencaminhar blocos alterados, a verificação falha no receptor.
+Serve para demonstrar, na defesa, que:
+
+- A confidencialidade e a integridade por AEAD **não bastam** isoladamente: como o atacante possui as chaves de ambas as sessões, os blocos adulterados são recifrados e **passam** na verificação AEAD do receptor.
+- A defesa eficaz é **comparar a [IMPRESSÃO DIGITAL DA CHAVE]** nos dois extremos (no diagrama, `Fingerprint_A ≠ Fingerprint_B` revela o intermediário) e usar **assinatura digital**: o proxy reencaminha a assinatura original sobre conteúdo alterado, pelo que a verificação falha no receptor (`--sign-key` / `--verify-key`).
 
 Execução (três terminais, com o proxy a apontar para o servidor real):
 
