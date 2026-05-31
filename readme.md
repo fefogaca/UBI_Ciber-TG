@@ -180,5 +180,5 @@ python -m src send --host 127.0.0.1 --port 10000 --file ./documento.pdf
 
 ## Autores
 
-[Afonso Esteves](https://github.com/flateri) · Felipe Dourado · [João Vitor Silva](https://github.com/joaovitor-o-ss) · [Rui Machado](https://github.com/ruimachado-ai) · [Tiago Pereira](https://github.com/tiagopereira001)  
+[Afonso Esteves](https://github.com/flateri) · [Felipe Dourado](https://github.com/fefogaca) · [João Vitor Silva](https://github.com/joaovitor-o-ss) · [Rui Machado](https://github.com/ruimachado-ai) · [Tiago Pereira](https://github.com/tiagopereira001)  
 UBI — Universidade da Beira Interior, Cibersegurança 2025/2026
