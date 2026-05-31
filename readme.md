@@ -122,6 +122,26 @@ O ataque demonstrado é o **MITM no acordo ECDH não autenticado**: as chaves X2
 > [!WARNING]
 > Após o KEX, cada terminal imprime uma linha **[IMPRESSÃO DIGITAL DA CHAVE]**. Se os valores nos dois lados divergirem, existe intermediário. O modo interativo permite persistir e comparar impressões digitais entre sessões via `peers.json`.
 
+### Prova de conceito do ataque
+
+O módulo [`ataque/mitm_proxy.py`](ataque/mitm_proxy.py) implementa um proxy MITM que se coloca entre emissor e receptor, troca as chaves públicas X25519 por chaves do atacante e tenta adulterar os blocos em trânsito. Serve para demonstrar, na defesa, que:
+
+- Sem verificação da **[IMPRESSÃO DIGITAL DA CHAVE]**, o atacante consegue intercetar a sessão.
+- A **integridade AEAD/HMAC** impede a adulteração silenciosa: ao reencaminhar blocos alterados, a verificação falha no receptor.
+
+Execução (três terminais, com o proxy a apontar para o servidor real):
+
+```bash
+# Terminal 1 — receptor real (servidor legítimo)
+python -m src serve --host 127.0.0.1 --port 10001 --output-dir ./received
+
+# Terminal 2 — proxy do atacante (escuta na 10000, reencaminha para 10001)
+python -m ataque.mitm_proxy
+
+# Terminal 3 — emissor, a ligar ao proxy em vez do servidor real
+python -m src send --host 127.0.0.1 --port 10000 --file ./documento.pdf
+```
+
 ## Estrutura do código
 
 | Módulo | Responsabilidade |
@@ -135,6 +155,7 @@ O ataque demonstrado é o **MITM no acordo ECDH não autenticado**: as chaves X2
 | `interactive.py` | Menus guiados, gestão de peers |
 | `peers.py` | Persistência de destinos e impressões digitais TOFU |
 | `branding.py` | Identidade visual no terminal (ANSI) |
+| `ataque/mitm_proxy.py` | Prova de conceito de ataque MITM ao acordo de chaves (defesa do trabalho) |
 
 ## Autores
 

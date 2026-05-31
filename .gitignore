@@ -4,7 +4,7 @@ __pycache__/
 received/
 received_test/
 received_multi/
+.DS_Store
+*.pem
 Enunciado.md
-
-# Material local de apoio / testes — não versionar
 help/
