@@ -35,6 +35,25 @@ pip install -r requirements.txt
 > [!NOTE]
 > No macOS/Linux, se `python` não for reconhecido ao criar o ambiente virtual, usa `python3 -m venv .venv`. Após a activação do venv, usa sempre `python`.
 
+### Scripts de execução
+
+Na raiz do projecto há **`run.sh`** (macOS/Linux) e **`run.bat`** (Windows). Na primeira vez criam o ambiente virtual, instalam o que está em `requirements.txt` e chamam a aplicação — os argumentos que seguem são os mesmos de `python -m src` (`serve`, `send`, `menu`, `--help`, flags, etc.).
+
+```bash
+chmod +x run.sh   # só na primeira vez, em macOS/Linux
+./run.sh serve --port 9000 --output-dir ./received
+./run.sh send --port 9000 --file ./documento.pdf
+./run.sh menu
+```
+
+```bat
+run.bat serve --port 9000 --output-dir .\received
+run.bat send --port 9000 --file .\documento.pdf
+run.bat menu
+```
+
+Se já tiveres o venv activo e preferires invocar directamente, continua a funcionar como abaixo.
+
 Terminal 1 — receptor:
 ```bash
 python -m src serve --port 9000 --output-dir ./received
